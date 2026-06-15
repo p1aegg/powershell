@@ -66,7 +66,7 @@ $urls = @(
     'https://github.com/winsiderss/si-builds/releases/download/4.0.26115.206/systeminformer-build-canary-setup.exe',
     'https://www.nirsoft.net/utils/winprefetchview-x64.zip',
     'https://www.nirsoft.net/utils/usbdeview-x64.zip',
-    'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe',
+    'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe'
 )
 
 $counter = 0
