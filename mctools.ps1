@@ -1,81 +1,82 @@
+# =======================
+# TOOLS COLLECTOR (CUSTOM)
+# =======================
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 cls
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-
-Write-Host @"
-MC SS Tools
-"@ -ForegroundColor Blue
-
-$lineWidth = 100
-Write-Host "MC SS Tools".PadLeft(($lineWidth + 24) / 2) -ForegroundColor Cyan
-Write-Host ("━" * $lineWidth) -ForegroundColor Cyan
+Write-Host ""
+Write-Host "=====================================" -ForegroundColor Cyan
+Write-Host "        TOOLS COLLECTOR (MIN)        " -ForegroundColor Green
+Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host ""
 
 if (-not ([Security.Principal.WindowsPrincipal] `
     [Security.Principal.WindowsIdentity]::GetCurrent()
 ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "[!!] Please run this script as Administrator." -ForegroundColor Red
-    Write-Host "     Right-click PowerShell and select 'Run as administrator'." -ForegroundColor Yellow
-    Write-Host ""
-    pause
+
+    Write-Host "Restarting as administrator..." -ForegroundColor Yellow
+    Start-Process powershell -Verb RunAs -ArgumentList `
+        "-ExecutionPolicy Bypass -File `"$($MyInvocation.MyCommand.Definition)`""
     exit 0
 }
 
-$baseDir   = "C:\"
-$prefix    = "SS"
-$idx       = 1
-while (Test-Path "$baseDir$prefix$idx") { $idx++ }
-$workDir   = "$baseDir$prefix$idx"
-New-Item -Path $workDir -ItemType Directory -Force | Out-Null
-Set-Location $workDir
-Write-Host "[+] Working directory: $workDir" -ForegroundColor Cyan
+$root = "C:\"
+$name = "SS"
+$i = 1
+while (Test-Path "$root$name$i") { $i++ }
+$folder = "$root$name$i"
+
+New-Item -Path $folder -ItemType Directory -Force | Out-Null
+Set-Location $folder
+Write-Host "[+] Created folder: $folder" -ForegroundColor Cyan
+
 try {
-    Add-MpPreference -ExclusionPath $workDir -ErrorAction Stop
-    Write-Host "[OK] Defender exclusion set for: $workDir" -ForegroundColor Green
+    Add-MpPreference -ExclusionPath $folder -ErrorAction Stop
+    Write-Host "[✓] Added Windows Defender exclusion for: $folder" -ForegroundColor Green
 }
 catch {
-    Write-Host "[!!] Defender exclusion failed: $_" -ForegroundColor Yellow
-    Write-Host "     Add the exclusion manually if tools get blocked." -ForegroundColor Yellow
+    Write-Host "[!] Could not add Defender exclusion: $_" -ForegroundColor Yellow
+    Write-Host "    (You may need to add it manually if Defender blocks the tools)" -ForegroundColor Yellow
 }
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
-function Fetch-File {
-    param ([string]$Link, [string]$Name = "")
-    $file = if ($Name) { $Name } else { Split-Path $Link -Leaf }
-    $out  = Join-Path $workDir $file
+function Download-File {
+    param ([string]$Url)
+
+    $fileName = Split-Path $Url -Leaf
+    $dest = Join-Path $folder $fileName
+
     try {
-        Invoke-WebRequest -Uri $Link -OutFile $out -UseBasicParsing `
-            -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        Write-Host "  [Downloaded] $file" -ForegroundColor Green
+        Invoke-WebRequest -Uri $Url -OutFile $dest -UseBasicParsing
+        Write-Host "[✓] Downloaded: $fileName" -ForegroundColor Green
     }
     catch {
-        Write-Host "  [Failed] $file - $_" -ForegroundColor Red
+        Write-Host "[✗] Failed: $fileName" -ForegroundColor Red
     }
 }
 
-$downloadList = @(
-    # Priority tools first
-    @{ Link = 'https://github.com/spokwn/BAM-parser/releases/download/v1.2.9/BAMParser.exe' },
-    @{ Link = 'https://github.com/winsiderss/si-builds/releases/download/4.0.26133.456/systeminformer-build-canary-setup.exe' },
-    @{ Link = 'https://github.com/spokwn/JournalTrace/releases/download/1.2/JournalTrace.exe' },
-    @{ Link = 'https://www.nirsoft.net/utils/winprefetchview-x64.zip' },
-    @{ Link = 'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe' },
-    @{ Link = 'https://github.com/Orbdiff/JARParser/releases/download/v1.2/JARParser.exe' },
-    @{ Link = 'https://github.com/spokwn/KernelLiveDumpTool/releases/download/v1.1/KernelLiveDumpTool.exe' },
-    @{ Link = 'https://www.nirsoft.net/utils/usbdeview-x64.zip' },
-    @{ Link = 'https://github.com/p1aegg/javaw/releases/download/v1.4/P1AE.Javaw.exe' }
+$urls = @(
+    'https://github.com/spokwn/BAM-parser/releases/download/v1.2.9/BAMParser.exe',
+    'https://github.com/spokwn/JournalTrace/releases/download/1.2/JournalTrace.exe',
+    'https://github.com/spokwn/KernelLiveDumpTool/releases/download/v1.1/KernelLiveDumpTool.exe',
+    'https://github.com/Orbdiff/JARParser/releases/download/v1.2/JARParser.exe',
+    'https://github.com/p1aegg/javaw/releases/download/v1.4/P1AE.Javaw.exe',
+    'https://github.com/winsiderss/si-builds/releases/download/4.0.26115.206/systeminformer-build-canary-setup.exe',
+    'https://www.nirsoft.net/utils/winprefetchview-x64.zip',
+    'https://www.nirsoft.net/utils/usbdeview-x64.zip'
+    'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe',
 )
 
-$n   = 0
-$tot = $downloadList.Count
-foreach ($item in $downloadList) {
-    $n++
-    $displayName = if ($item.Name) { $item.Name } else { Split-Path $item.Link -Leaf }
-    Write-Host "`n  --> [$n/$tot] $displayName" -ForegroundColor Cyan
-    Fetch-File -Link $item.Link -Name $item.Name
+$counter = 0
+$total = $urls.Count
+
+foreach ($url in $urls) {
+    $counter++
+    Write-Host "`n[$counter/$total] $(Split-Path $url -Leaf)" -ForegroundColor Cyan
+    Download-File $url
 }
 
-Start-Process explorer.exe $workDir
-Write-Host "`n[DONE] All tasks complete." -ForegroundColor Green
+Start-Process explorer.exe $folder
+Write-Host "`n[✓] Finished" -ForegroundColor Green
