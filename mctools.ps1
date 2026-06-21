@@ -66,6 +66,7 @@ $urls = @(
     'https://www.nirsoft.net/utils/winprefetchview-x64.zip',
     'https://www.nirsoft.net/utils/usbdeview-x64.zip',
     'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe'
+    'https://github.com/ItzIceHere/RedLotusAltChecker/releases/download/RL/RedLotusAltChecker.exe'
 )
 
 $counter = 0
