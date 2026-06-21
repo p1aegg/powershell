@@ -67,6 +67,10 @@ $urls = @(
     'https://www.nirsoft.net/utils/usbdeview-x64.zip',
     'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe'
     'https://github.com/ItzIceHere/RedLotusAltChecker/releases/download/RL/RedLotusAltChecker.exe'
+    'https://github.com/praiselily/AltDetector/releases/download/Detector/AltDetector.exe'
+    'https://github.com/praiselily/HardlinkFinder/releases/download/Tools/hardlink.'
+    'https://github.com/praiselily/WeHateFakers/releases/download/Screenshare/FakerFinder.jar'
+    'https://github.com/Lafferrr/SSTools/raw/refs/heads/main/SSTools/MacroScanner/MacroScanner.exe'
 )
 
 $counter = 0
