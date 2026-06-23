@@ -61,7 +61,7 @@ $urls = @(
     'https://github.com/spokwn/BAM-parser/releases/download/v1.2.9/BAMParser.exe',
     'https://github.com/spokwn/JournalTrace/releases/download/1.2/JournalTrace.exe',
     'https://github.com/Orbdiff/JARParser/releases/download/v1.2/JARParser.exe',
-    'https://github.com/p1aegg/javaw/releases/download/v1.4/P1AE.Javaw.exe',
+    'https://github.com/p1aegg/javaw/releases/download/v1.5/P1AE.Javaw.exe',
     'https://github.com/winsiderss/si-builds/releases/download/4.0.26115.206/systeminformer-build-canary-setup.exe',
     'https://www.nirsoft.net/utils/winprefetchview-x64.zip',
     'https://www.nirsoft.net/utils/usbdeview-x64.zip',
