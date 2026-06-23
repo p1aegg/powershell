@@ -71,6 +71,7 @@ $urls = @(
     'https://github.com/praiselily/HardlinkFinder/releases/download/Tools/hardlink.'
     'https://github.com/praiselily/WeHateFakers/releases/download/Screenshare/FakerFinder.jar'
     'https://github.com/Lafferrr/SSTools/raw/refs/heads/main/SSTools/MacroScanner/MacroScanner.exe'
+    'https://www.nirsoft.net/utils/executedprogramslist.zip'
 )
 
 $counter = 0
