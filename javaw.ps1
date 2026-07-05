@@ -58,7 +58,7 @@ function Download-File {
 }
 
 $urls = @(
-    'https://github.com/p1aegg/javaw/releases/download/v1.6/P1AE.Javaw.exe',
+    'https://github.com/p1aegg/javaw/releases/download/v1.6/P1AE.Javaw.exe'
 )
 
 $counter = 0
