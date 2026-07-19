@@ -63,7 +63,7 @@ $urls = @(
     'https://github.com/p1aegg/javaw/releases/download/v1.8/P1AE.Javaw.exe',
     'https://github.com/winsiderss/si-builds/releases/download/4.0.26115.206/systeminformer-build-canary-setup.exe',
     'https://github.com/Orbdiff/PrefetchView/releases/download/v1.6.7/pv++.exe',
-    'https://www.nirsoft.net/utils/usbdeview-x64.zip',
+    'https://detect.ac/tool/USBDeview++',
     'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe'
     'https://github.com/praiselily/AltDetector/releases/download/Detector/AltDetector.exe'
     'https://github.com/Lafferrr/SSTools/raw/refs/heads/main/SSTools/MacroScanner/MacroScanner.exe'
@@ -72,6 +72,7 @@ $urls = @(
     'https://github.com/spokwn/KernelLiveDumpTool/releases/download/v1.1/KernelLiveDumpTool.exe'
     'https://github.com/Orbdiff/Fileless/releases/download/v1.3/fileless.exe'
     'https://github.com/spokwn/BamDeletedKeys/releases/download/v1.0/BamDeletedKeys.exe'
+    'https://detect.ac/tool/SavedFilesViewer++'
 )
 
 $counter = 0
