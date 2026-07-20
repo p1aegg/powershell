@@ -60,7 +60,7 @@ function Download-File {
 $urls = @(
     'https://github.com/spokwn/BAM-parser/releases/download/v1.2.9/BAMParser.exe',
     'https://github.com/spokwn/JournalTrace/releases/download/1.2/JournalTrace.exe',
-    'https://github.com/p1aegg/javaw/releases/download/v1.8/P1AE.Javaw.exe',
+    'https://github.com/p1aegg/javaw/releases/download/v1.9/P1AE.Javaw.exe',
     'https://github.com/winsiderss/si-builds/releases/download/4.0.26115.206/systeminformer-build-canary-setup.exe',
     'https://github.com/Orbdiff/PrefetchView/releases/download/v1.6.7/pv++.exe',
     'https://detect.ac/tool/USBDeview++',
