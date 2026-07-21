@@ -1,4 +1,4 @@
-﻿[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
 $OutputEncoding           = [System.Text.Encoding]::UTF8
 chcp 65001 | Out-Null
@@ -399,7 +399,6 @@ $cheatStrings = @(
     "dqrkis.xyz", "Dqrkis Client"
 )
 
-# === DISALLOWED MODS (from Yarp) ===
 $disallowedMods = @{
     "xeros-minimap" = @{Names=@("Xero's Minimap","Xeros Minimap","xeros-minimap","XerosMinimap","Xero's Minimap Mod")}
     "freecam" = @{Names=@("Freecam","freecam","FreeCam","Free Cam")}
@@ -508,7 +507,6 @@ function Get-Mod-Info-From-Jar {
     try {
         $zip = [System.IO.Compression.ZipFile]::OpenRead($FilePath)
 
-        # Fabric
         $fmje = $zip.Entries | Where-Object { $_.FullName -eq "fabric.mod.json" } | Select-Object -First 1
         if ($fmje) {
             try {
@@ -520,7 +518,6 @@ function Get-Mod-Info-From-Jar {
             } catch { }
         }
 
-        # Forge/NeoForge (mods.toml)
         if (-not $modId) {
             $mte = $zip.Entries | Where-Object { $_.FullName -eq "META-INF/mods.toml" } | Select-Object -First 1
             if ($mte) {
@@ -534,7 +531,6 @@ function Get-Mod-Info-From-Jar {
             }
         }
 
-        # Legacy Forge (mcmod.info)
         if (-not $modId) {
             $mie = $zip.Entries | Where-Object { $_.FullName -eq "mcmod.info" } | Select-Object -First 1
             if ($mie) {
@@ -964,7 +960,7 @@ function Invoke-BypassScan {
 }
 
 function Invoke-JvmScan {
-    $results = [System.Collections.Generic.List[string]]::new()
+    $results = [System.Collections.Generic.List[object]]::new()
 
     $javaProcesses = Get-Process -Name javaw -ErrorAction SilentlyContinue
     if ($javaProcesses.Count -eq 0) {
@@ -989,41 +985,54 @@ function Invoke-JvmScan {
 
     foreach ($proc in $javaProcesses) {
         try {
-            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)" -ErrorAction Stop).CommandLine
+            $cim = Get-CimInstance Win32_Process -Filter "ProcessId = $($proc.Id)" -ErrorAction Stop
+            $cmdLine = $cim.CommandLine
             if (-not $cmdLine) { continue }
-
-            Write-Host "  ┌─ Process: PID $($proc.Id)" -ForegroundColor Green
 
             $detected = @()
 
             foreach ($arg in $suspiciousJvmArgs) {
                 if ($cmdLine -match [regex]::Escape($arg)) {
-                    $detected += $arg
+                    if ($cmdLine -match [regex]::Escape($arg) + '([^"\s;]+|"[^"]*")') {
+                        $value = $matches[1].Trim('"')
+                        $detected += [PSCustomObject]@{
+                            Arg   = $arg
+                            Value = $value
+                            Full  = $arg + $value
+                        }
+                    } else {
+                        $detected += [PSCustomObject]@{
+                            Arg   = $arg
+                            Value = ""
+                            Full  = $arg
+                        }
+                    }
                 }
             }
 
-            if ($cmdLine -match '-javaagent:') {
-                $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
-                foreach ($m in $agentMatches) {
-                    $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
-                    $agentName = [System.IO.Path]::GetFileName($agentPath)
-                    $legit = @("jmxremote","yjp","jrebel","newrelic","jacoco","theseus")
-                    if (-not ($legit | Where-Object { $agentName -match $_ })) {
-                        $detected += "-javaagent:$agentName"
+            $agentMatches = [regex]::Matches($cmdLine, '-javaagent:([^\s"]+)')
+            foreach ($m in $agentMatches) {
+                $agentPath = $m.Groups[1].Value.Trim('"').Trim("'")
+                $agentName = [System.IO.Path]::GetFileName($agentPath)
+                $legit = @("jmxremote","yjp","jrebel","newrelic","jacoco","theseus")
+                if (-not ($legit | Where-Object { $agentName -match $_ })) {
+                    $detected += [PSCustomObject]@{
+                        Arg   = "-javaagent:"
+                        Value = $agentPath
+                        Full  = "-javaagent:$agentPath"
                     }
                 }
             }
 
             if ($detected.Count -gt 0) {
-                Write-Host "  ├─ [✗] SUSPICIOUS JVM ARGUMENTS DETECTED" -ForegroundColor Red
-                foreach ($d in $detected) {
-                    Write-Host "  │    • $d" -ForegroundColor Magenta
-                }
-                $results.Add("Suspicious JVM flags detected in PID $($proc.Id)")
-            } else {
-                Write-Host "  └─ [✓] No suspicious JVM arguments detected" -ForegroundColor Green
+                $results.Add([PSCustomObject]@{
+                    PID         = $proc.Id
+                    CommandLine = $cmdLine
+                    Detected    = $detected
+                })
             }
-        } catch {
+        }
+        catch {
             Write-Host "  └─ [!] Could not read command line for PID $($proc.Id) (run as Administrator)" -ForegroundColor DarkYellow
         }
     }
@@ -1372,7 +1381,7 @@ $jvmFlags = Invoke-JvmScan
 if ($jvmFlags.Count -gt 0) {
     Write-Host "   ⚠️  JVM issues found!" -ForegroundColor Yellow
 } else {
-    Write-Host "   ✓  JVM looks clean" -ForegroundColor DarkGray
+    Write-Host "  ✓  JVM looks clean" -ForegroundColor DarkGray
 }
 
 Write-Host "`r$(' ' * 100)`r" -NoNewline
@@ -1454,35 +1463,35 @@ if ($jvmFlags.Count -gt 0) {
     Write-SectionHeader -Title "JVM / RUNTIME INJECTION" -Count $jvmFlags.Count -DotColor Yellow -CountColor Yellow
     Write-Rule "─" 76 DarkGray
     Write-Host ""
-    Write-Host ("  " + ("─" * 70)) -ForegroundColor DarkYellow
-    Write-Host "  │ " -ForegroundColor DarkYellow -NoNewline
-    Write-Host " JVM " -ForegroundColor Black -BackgroundColor Yellow -NoNewline
-    Write-Host "  javaw / java process" -ForegroundColor Yellow
-    Write-Host ("  │ " + ("─" * 66)) -ForegroundColor DarkYellow
-    foreach ($flag in $jvmFlags) {
-        $ft = $flag; $fd = ""; $fpath = ""
-        if ($flag -match "^(.+?) — (.+) \(path: (.+)\)$") {
-            $ft = $matches[1]; $fd = $matches[2]; $fpath = $matches[3]
-        } elseif ($flag -match "^(.+?) — (.+)$") {
-            $ft = $matches[1]; $fd = $matches[2]
+
+    foreach ($proc in $jvmFlags) {
+        Write-Host ("  " + ("─" * 70)) -ForegroundColor DarkYellow
+        Write-Host "  │ " -ForegroundColor DarkYellow -NoNewline
+        Write-Host " JVM PROCESS " -ForegroundColor Black -BackgroundColor Yellow -NoNewline
+        Write-Host "  PID: $($proc.PID)" -ForegroundColor Yellow
+        Write-Host ("  │ " + ("─" * 66)) -ForegroundColor DarkYellow
+
+        Write-Host "  │  Detected Suspicious Arguments:" -ForegroundColor White
+
+        foreach ($item in $proc.Detected) {
+            Write-Host "  │" -ForegroundColor DarkYellow
+            Write-Host "  │    ◉ " -ForegroundColor Yellow -NoNewline
+            Write-Host $item.Arg -ForegroundColor White -NoNewline
+            if ($item.Value) {
+                Write-Host $item.Value -ForegroundColor Cyan
+            } else {
+                Write-Host "" -ForegroundColor White
+            }
         }
+
         Write-Host "  │" -ForegroundColor DarkYellow
-        Write-Host "  │  " -ForegroundColor DarkYellow -NoNewline
-        Write-Host "◉ " -ForegroundColor Yellow -NoNewline
-        Write-Host $ft -ForegroundColor White
-        if ($fd -ne "") {
-            Write-Host "  │    " -ForegroundColor DarkYellow -NoNewline
-            Write-Host $fd -ForegroundColor Gray
-        }
-        if ($fpath -ne "") {
-            $display = if ($fpath.Length -gt 60) { "..." + $fpath.Substring($fpath.Length - 57) } else { $fpath }
-            Write-Host "  │    " -ForegroundColor DarkYellow -NoNewline
-            Write-Host $display -ForegroundColor DarkGray
-        }
+        Write-Host ("  " + ("─" * 70)) -ForegroundColor DarkYellow
+        Write-Host ""
     }
-    Write-Host "  │" -ForegroundColor DarkYellow
-    Write-Host ("  " + ("─" * 70)) -ForegroundColor DarkYellow
-    Write-Host ""
+}
+else {
+    Write-Host "  ✓  JVM looks clean
+    " -ForegroundColor DarkGray
 }
 
 Write-Host "📊 SUMMARY" -ForegroundColor Cyan
