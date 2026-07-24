@@ -68,7 +68,7 @@ $urls = @(
     'https://github.com/praiselily/AltDetector/releases/download/Detector/AltDetector.exe'
     'https://github.com/Lafferrr/SSTools/raw/refs/heads/main/SSTools/MacroScanner/MacroScanner.exe'
     'https://www.nirsoft.net/utils/executedprogramslist.zip'
-    'https://github.com/MeowTonynoh/MeowResolver/releases/download/MeowResolver/MeowResolver.exe'
+    'https://github.com/MeowTonynoh/MeowResolver/releases/download/v.1.1/MeowResolver.exe'
     'https://github.com/spokwn/KernelLiveDumpTool/releases/download/v1.1/KernelLiveDumpTool.exe'
     'https://github.com/Orbdiff/Fileless/releases/download/v1.3/fileless.exe'
     'https://github.com/spokwn/BamDeletedKeys/releases/download/v1.0/BamDeletedKeys.exe'
