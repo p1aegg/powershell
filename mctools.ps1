@@ -65,7 +65,6 @@ $urls = @(
     'https://github.com/Orbdiff/PrefetchView/releases/download/v1.6.7/pv++.exe',
     'https://detect.ac/tool/USBDeview++',
     'https://www.voidtools.com/Everything-1.4.1.1029.x64-Setup.exe'
-    'https://github.com/praiselily/AltDetector/releases/download/Detector/AltDetector.exe'
     'https://github.com/Lafferrr/SSTools/raw/refs/heads/main/SSTools/MacroScanner/MacroScanner.exe'
     'https://www.nirsoft.net/utils/executedprogramslist.zip'
     'https://github.com/MeowTonynoh/MeowResolver/releases/download/v.1.1/MeowResolver.exe'
