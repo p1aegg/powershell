@@ -23,7 +23,7 @@ Write-Host @"
 "@ -ForegroundColor Blue
 
 $lineWidth = 100
-Write-Host "P1ae's Classloader Dump v1.1".PadLeft(($lineWidth + 37) / 2) -ForegroundColor Cyan
+Write-Host "P1ae's Classloader Dump v1.0".PadLeft(($lineWidth + 37) / 2) -ForegroundColor Cyan
 Write-Host ("━" * $lineWidth) -ForegroundColor Cyan
 Write-Host ""
 
