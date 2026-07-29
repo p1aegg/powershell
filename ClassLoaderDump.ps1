@@ -1,4 +1,4 @@
-﻿[System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
 Clear-Host
@@ -56,7 +56,7 @@ Write-Host "SELECT MODE" -ForegroundColor Magenta
 Write-Host $sepMenu -ForegroundColor Magenta
 Write-Host ""
 Write-Host "  [1] Normal           - Just run the classloader dumps" -ForegroundColor White
-Write-Host "  [2] Normal + Compare - Also scan a mods folder you point it at, build a known-good class list from those jars, and produce a third file containing ONLY the unrecognized classes" -ForegroundColor White
+Write-Host "  [2] Normal + Compare - Scans mods folder and makes a base for known classes list from those jars, and produce a third file containing ONLY the unrecognized classes" -ForegroundColor White
 Write-Host ""
 
 $CompareMode = $false
