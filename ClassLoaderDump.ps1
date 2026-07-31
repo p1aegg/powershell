@@ -47,7 +47,8 @@ $CoreBaselinePrefixes = @(
     "org.multimc", "org.polymc",
     "com.atlauncher",
     "org.jcp.xml.dsig",
-    "com.jcraft"
+    "com.jcraft",
+    "com.azul"
 )
 
 $sepMenu = "━" * 100
