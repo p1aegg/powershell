@@ -48,7 +48,12 @@ $CoreBaselinePrefixes = @(
     "com.atlauncher",
     "org.jcp.xml.dsig",
     "com.jcraft",
-    "com.azul"
+    "com.azul",
+    "org.kodein",
+    "org.jetbrains",
+    "gg.essential",
+    "com.sparkuniverse"
+    
 )
 
 $sepMenu = "━" * 100
