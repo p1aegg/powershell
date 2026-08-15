@@ -41,9 +41,27 @@ if ($choice -ne "1") {
     exit
 }
 Write-Host "`n"
+$RawBaseUrl = "https://raw.githubusercontent.com/p1aegg/powershell/main"
+
+function Get-BaselineFileContent([string]$fileName) {
+    if ($PSScriptRoot) {
+        $localPath = Join-Path $PSScriptRoot $fileName
+        if (Test-Path -LiteralPath $localPath -ErrorAction SilentlyContinue) {
+            return Get-Content -LiteralPath $localPath -Encoding UTF8
+        }
+    }
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $resp = Invoke-RestMethod -Uri "$RawBaseUrl/$fileName" -ErrorAction Stop
+        return ($resp -split "`r?`n")
+    } catch {
+        Write-Host "  [!] Could not load $fileName locally or remotely: $($_.Exception.Message)" -ForegroundColor DarkYellow
+        return @()
+    }
+}
+
 $CoreBaselinePrefixes = @(
-    Get-Content -LiteralPath (Join-Path $PSScriptRoot "CoreBaselineClasses.txt") -Encoding UTF8 |
-        Where-Object { $_ -and $_.Trim() -ne '' }
+    Get-BaselineFileContent "CoreBaselineClasses.txt" | Where-Object { $_ -and $_.Trim() -ne '' }
 )
 
 $CoreBaselinePackagePrefixes = @(
