@@ -41,7 +41,7 @@ if ($choice -ne "1") {
     exit
 }
 Write-Host "`n"
-$RawBaseUrl = "https://raw.githubusercontent.com/p1aegg/powershell/main"
+$RawBaseUrl = "https://raw.githubusercontent.com/p1aegg/powershell/main/CoreBaselineClasses.txt"
 
 function Get-BaselineFileContent([string]$fileName) {
     if ($PSScriptRoot) {
