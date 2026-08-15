@@ -40,29 +40,18 @@ if ($choice -ne "1") {
     Write-Host "`nInvalid choice. Exiting."
     exit
 }
-Write-Host "`n"
-$RawBaseUrl = "https://raw.githubusercontent.com/p1aegg/powershell/main/CoreBaselineClasses.txt"
+$RawBaseUrl = "https://raw.githubusercontent.com/p1aegg/powershell/main"
 
-function Get-BaselineFileContent([string]$fileName) {
-    if ($PSScriptRoot) {
-        $localPath = Join-Path $PSScriptRoot $fileName
-        if (Test-Path -LiteralPath $localPath -ErrorAction SilentlyContinue) {
-            return Get-Content -LiteralPath $localPath -Encoding UTF8
-        }
-    }
-    try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $resp = Invoke-RestMethod -Uri "$RawBaseUrl/$fileName" -ErrorAction Stop
-        return ($resp -split "`r?`n")
-    } catch {
-        Write-Host "  [!] Could not load $fileName locally or remotely: $($_.Exception.Message)" -ForegroundColor DarkYellow
-        return @()
-    }
+$CoreBaselinePrefixes = @()
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $resp = Invoke-RestMethod -Uri "$RawBaseUrl/CoreBaselineClasses.txt" -ErrorAction Stop
+    $CoreBaselinePrefixes = @(($resp -split "`r?`n") | Where-Object { $_ -and $_.Trim() -ne '' })
+    Write-Host "  [i] Loaded $($CoreBaselinePrefixes.Count) baseline class names from GitHub" -ForegroundColor DarkGray
+} catch {
+    Write-Host "  [!] Failed to fetch CoreBaselineClasses.txt from GitHub: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  [i] Continuing with an empty baseline list.`n" -ForegroundColor Yellow
 }
-
-$CoreBaselinePrefixes = @(
-    Get-BaselineFileContent "CoreBaselineClasses.txt" | Where-Object { $_ -and $_.Trim() -ne '' }
-)
 
 $CoreBaselinePackagePrefixes = @(
     "net.minecraft",
@@ -82,21 +71,6 @@ $CoreBaselinePackagePrefixes = @(
     "org.spongepowered.asm.synthetic.args",
     "org.ladysnake.cca.internal.base.asm"
 )
-$exactFileCandidates = @(
-    (Join-Path $PSScriptRoot "CoreBaselineExact.txt"),
-    (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "CoreBaselineExact.txt"),
-    (Join-Path $PWD "CoreBaselineExact.txt")
-)
-$exactLoaded = $false
-foreach ($ef in $exactFileCandidates) {
-    if ($ef -and (Test-Path -LiteralPath $ef -ErrorAction SilentlyContinue)) {
-        $CoreBaselinePrefixes = @(Get-Content -LiteralPath $ef -Encoding UTF8 | Where-Object { $_ -and $_.Trim() -ne '' })
-        Write-Host " [i] Loaded $($CoreBaselinePrefixes.Count) exact baseline class names from: $ef" -ForegroundColor DarkGray
-        $exactLoaded = $true
-        break
-    }
-}
-if (-not $exactLoaded) {}
 
 if (-not ('ProcessHelper' -as [type])) {
     Add-Type -TypeDefinition @"
