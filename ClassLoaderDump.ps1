@@ -69,7 +69,8 @@ $CoreBaselinePackagePrefixes = @(
     "com.mojang.blaze3d.vertex",
     "com.llamalad7.mixinextras",
     "org.spongepowered.asm.synthetic.args",
-    "org.ladysnake.cca.internal.base.asm"
+    "org.ladysnake.cca.internal.base.asm",
+    "net.caffeinemc.mods.sodium.client.render.vertex.serializers.generated"
 )
 
 if (-not ('ProcessHelper' -as [type])) {
