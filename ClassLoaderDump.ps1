@@ -1,43 +1,71 @@
 [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
+
+$script:W = 76
+$script:SectionNo = 0
+
+function Write-Line([string]$glyph, [string]$gc, [string]$msg, [string]$mc = 'Gray', [int]$indent = 2) {
+    Write-Host ((' ' * $indent) + $glyph + ' ') -NoNewline -ForegroundColor $gc
+    Write-Host $msg -ForegroundColor $mc
+}
+function Write-Ok([string]$m, [int]$i = 2)   { Write-Line '✓' 'Green'    $m 'White'    $i }
+function Write-Info([string]$m, [int]$i = 2) { Write-Line '›' 'DarkCyan' $m 'Gray'     $i }
+function Write-Dim([string]$m, [int]$i = 2)  { Write-Line '·' 'DarkGray' $m 'DarkGray' $i }
+function Write-Warn([string]$m, [int]$i = 2) { Write-Line '▲' 'Yellow'   $m 'Yellow'   $i }
+function Write-Fail([string]$m, [int]$i = 2) { Write-Line '✗' 'Red'      $m 'Red'      $i }
+function Write-Note([string]$m, [int]$i = 2) { Write-Line '◆' 'Magenta'  $m 'Magenta'  $i }
+
+function Write-Section([string]$title) {
+    $script:SectionNo++
+    $label = $title.ToUpper()
+    $fill = $script:W - 8 - $label.Length
+    if ($fill -lt 3) { $fill = 3 }
+    Write-Host ""
+    Write-Host ("  {0:00}" -f $script:SectionNo) -NoNewline -ForegroundColor Cyan
+    Write-Host "  $label " -NoNewline -ForegroundColor White
+    Write-Host ('─' * $fill) -ForegroundColor DarkGray
+}
+
+function Write-Box([string[]]$lines, [string]$color = 'Cyan', [string[]]$colors = $null) {
+    $inner = $script:W - 4
+    Write-Host ('╭' + ('─' * ($script:W - 2)) + '╮') -ForegroundColor $color
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $c = if ($colors -and $i -lt $colors.Count) { $colors[$i] } else { 'White' }
+        Write-Host '│ ' -NoNewline -ForegroundColor $color
+        Write-Host ([string]$lines[$i]).PadRight($inner) -NoNewline -ForegroundColor $c
+        Write-Host ' │' -ForegroundColor $color
+    }
+    Write-Host ('╰' + ('─' * ($script:W - 2)) + '╯') -ForegroundColor $color
+}
+
 Clear-Host
-Write-Host "Made by p1ae (Fork of YarpLetapStan)`nDm p1ae for Questions or Bugs`n" -ForegroundColor Cyan
-Write-Host @"
- ██████╗██╗      █████╗ ███████╗███████╗██╗      ██████╗  █████╗ ██████╗ ███████╗██████╗
-██╔════╝██║     ██╔══██╗██╔════╝██╔════╝██║     ██╔═══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗
-██║     ██║     ███████║███████╗███████╗██║     ██║   ██║███████║██║  ██║█████╗  ██████╔╝
-██║     ██║     ██╔══██║╚════██║╚════██║██║     ██║   ██║██╔══██║██║  ██║██╔══╝  ██╔══██╗
-╚██████╗███████╗██║  ██║███████║███████║███████╗╚██████╔╝██║  ██║██████╔╝███████╗██║  ██║
- ╚═════╝╚══════╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝  ╚═╝
-"@ -ForegroundColor Blue
-Write-Host @"
-██████╗ ██╗   ██╗███╗   ███╗██████╗
-██╔══██╗██║   ██║████╗ ████║██╔══██╗
-██║  ██║██║   ██║██╔████╔██║██████╔╝
-██║  ██║██║   ██║██║╚██╔╝██║██╔═══╝
-██████╔╝╚██████╔╝██║ ╚═╝ ██║██║
-╚═════╝  ╚═════╝ ╚═╝     ╚═╝╚═╝
-"@ -ForegroundColor Blue
-$lineWidth = 100
-Write-Host "P1ae's Classloader Dump v1.2".PadLeft(($lineWidth + 37) / 2) -ForegroundColor Cyan
-Write-Host ("━" * $lineWidth) -ForegroundColor Cyan
 Write-Host ""
-$sepMenu = "━" * 100
-Write-Host $sepMenu -ForegroundColor Magenta
-Write-Host "SELECT ACTION" -ForegroundColor Magenta
-Write-Host $sepMenu -ForegroundColor Magenta
+Write-Box @(
+    "C L A S S L O A D E R   D U M P",
+    "v1.2.1",
+    "",
+    "Dm .p1ae for Questions or Bugs"
+) 'Cyan' @('Cyan', 'DarkGray', 'White', 'Gray', 'Gray')
+
 Write-Host ""
-Write-Host "  [1] Start  - Run classloader dumps with built‑in comparison" -ForegroundColor White
-Write-Host "  [2] Exit   - Close this tool" -ForegroundColor White
+Write-Host "  Select an action" -ForegroundColor White
+Write-Host ("  " + ('─' * ($script:W - 4))) -ForegroundColor DarkGray
+Write-Host "   [1]" -NoNewline -ForegroundColor Cyan;  Write-Host "  Start" -ForegroundColor White
+Write-Host "   [2]" -NoNewline -ForegroundColor Cyan;  Write-Host "  Exit" -ForegroundColor White
+Write-Host ""
+Write-Host "  press 1 or 2 ❯ " -NoNewline -ForegroundColor DarkGray
 $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 $choice = $key.Character.ToString()
+Write-Host $choice -ForegroundColor Cyan
 if ($choice -eq "2") {
-    Write-Host "`nExiting..."
+    Write-Host ""
+    Write-Dim "Exiting..."
     exit
 }
 if ($choice -ne "1") {
-    Write-Host "`nInvalid choice. Exiting."
+    Write-Host ""
+    Write-Fail "Invalid choice. Exiting."
     exit
 }
 
@@ -114,6 +142,84 @@ public class ProcessHelper
 "@
 }
 
+if (-not ('TolerantZip' -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.IO;
+using System.Text;
+using System.Collections.Generic;
+public static class TolerantZip
+{
+    public static List<string> ListEntries(string path)
+    {
+        byte[] d = File.ReadAllBytes(path);
+        var names = new List<string>();
+        if (!TryCentralDirectory(d, names)) { names.Clear(); ScanLocalHeaders(d, names); }
+        return names;
+    }
+    static ushort U16(byte[] d, long o) { return (ushort)(d[o] | (d[o + 1] << 8)); }
+    static uint U32(byte[] d, long o) { return (uint)(d[o] | (d[o+1] << 8) | (d[o+2] << 16) | (d[o+3] << 24)); }
+    static ulong U64(byte[] d, long o) { return U32(d, o) | ((ulong)U32(d, o + 4) << 32); }
+
+    static bool TryCentralDirectory(byte[] d, List<string> names)
+    {
+        long eocd = -1;
+        long min = Math.Max(0, d.LongLength - 65557);
+        for (long i = d.LongLength - 22; i >= min; i--)
+            if (U32(d, i) == 0x06054b50) { eocd = i; break; }
+        if (eocd < 0) return false;
+        ulong entries = U16(d, eocd + 10);
+        ulong cdOff = U32(d, eocd + 16);
+        if ((entries == 0xFFFF || cdOff == 0xFFFFFFFF) && eocd >= 20 && U32(d, eocd - 20) == 0x07064b50)
+        {
+            ulong z64 = U64(d, eocd - 20 + 8);
+            if (z64 + 56 <= (ulong)d.LongLength && U32(d, (long)z64) == 0x06064b50)
+            {
+                entries = U64(d, (long)z64 + 32);
+                cdOff = U64(d, (long)z64 + 48);
+            }
+        }
+        long p = (long)cdOff;
+        for (ulong n = 0; n < entries; n++)
+        {
+            if (p < 0 || p + 46 > d.LongLength || U32(d, p) != 0x02014b50) return false;
+            int nl = U16(d, p + 28), el = U16(d, p + 30), cl = U16(d, p + 32);
+            if (p + 46 + nl > d.LongLength) return false;
+            names.Add(Encoding.UTF8.GetString(d, (int)p + 46, nl));
+            p += 46 + nl + el + cl;
+        }
+        return names.Count > 0;
+    }
+
+    static void ScanLocalHeaders(byte[] d, List<string> names)
+    {
+        for (long i = 0; i + 30 < d.LongLength; i++)
+        {
+            if (d[i] != 0x50 || d[i+1] != 0x4B || d[i+2] != 3 || d[i+3] != 4) continue;
+            int nl = U16(d, i + 26);
+            if (nl == 0 || i + 30 + nl > d.LongLength) continue;
+            string name = Encoding.UTF8.GetString(d, (int)i + 30, nl);
+            if (name.EndsWith(".class")) names.Add(name);
+        }
+    }
+}
+"@
+}
+
+function Add-EntryNamesToWhitelist($names, $exact, $packageSet) {
+    $count = 0
+    foreach ($n in $names) {
+        if (-not $n.EndsWith(".class")) { continue }
+        if ($n.StartsWith("META-INF/") -or $n -eq "module-info.class") { continue }
+        $q = $n.Substring(0, $n.Length - 6) -replace '/', '.'
+        [void]$exact.Add($q)
+        $count++
+        $i = $q.LastIndexOf('.')
+        if ($i -gt 0) { [void]$packageSet.Add($q.Substring(0, $i)) }
+    }
+    return $count
+}
+
 function Get-ProcessCurrentDirectory([int]$processId) {
     try { return [ProcessHelper]::GetCurrentDirectory($processId) } catch { return $null }
 }
@@ -136,8 +242,10 @@ function Find-UpwardFolders([string]$startDir, [string]$folderName, [int]$maxDep
     $current = $startDir
     for ($i = 0; $i -lt $maxDepth; $i++) {
         if (-not $current) { break }
-        $candidate = Join-Path $current $folderName
-        if (Test-Path $candidate -ErrorAction SilentlyContinue) { [void]$found.Add($candidate) }
+        $direct = Join-Path $current $folderName
+        if (Test-Path $direct -ErrorAction SilentlyContinue) { [void]$found.Add($direct) }
+        $metaVariant = Join-Path $current "meta\$folderName"
+        if (Test-Path $metaVariant -ErrorAction SilentlyContinue) { [void]$found.Add($metaVariant) }
         $parent = Split-Path $current -Parent
         if (-not $parent -or $parent -eq $current) { break }
         $current = $parent
@@ -239,15 +347,16 @@ function Find-LatestInstanceByLog {
             if ($t -gt $bestTime) { $bestTime = $t; $bestBase = $base }
         } catch {}
     }
-    Write-Host "  [i] Checked $checked instance log(s) across all known launchers" -ForegroundColor DarkGray
-    if ($bestBase) { Write-Host "  [i] Newest latest.log: $bestTime  →  $bestBase" -ForegroundColor DarkGray }
+    Write-Dim "Checked $checked instance log(s) across all known launchers" 4
+    if ($bestBase) { Write-Dim "Newest latest.log: $bestTime  →  $bestBase" 4 }
     return $bestBase
 }
 
 $CompareMode = $true
 $instanceFolders = $null
 $modsFolder = $null
-Write-Host "`n[i] Detecting mods folder for the running Minecraft instance..." -ForegroundColor Yellow
+Write-Section "Detect instance"
+Write-Info "Looking for the mods folder of the running Minecraft instance..."
 $javaProcs = Get-Process -Name javaw -ErrorAction SilentlyContinue
 if ($javaProcs) {
     foreach ($proc in $javaProcs) {
@@ -257,39 +366,39 @@ if ($javaProcs) {
             if ($candidate) {
                 $instanceFolders = $candidate
                 $modsFolder = $candidate.Mods
-                Write-Host "  [✓] $modsFolder" -ForegroundColor Green
+                Write-Ok "mods  $modsFolder"
                 break
             }
         }
     }
 }
 if (-not $modsFolder) {
-    Write-Host "  [i] PEB path found no mods folder – scanning every launcher's instances for the most recently updated logs\latest.log..." -ForegroundColor DarkGray
+    Write-Dim "PEB path found no mods folder – scanning every launcher's instances for the newest logs\latest.log..."
     $latestBase = Find-LatestInstanceByLog
     if ($latestBase) {
         $candidate = Resolve-InstanceFolders $latestBase
         if ($candidate) {
             $instanceFolders = $candidate
             $modsFolder = $candidate.Mods
-            Write-Host "  [✓] Found via newest latest.log: $modsFolder" -ForegroundColor Green
+            Write-Ok "mods (via newest latest.log)  $modsFolder"
         } else {
-            Write-Host "  [!] Newest latest.log found at $latestBase but no matching mods folder next to it" -ForegroundColor DarkYellow
+            Write-Warn "Newest latest.log found at $latestBase but no matching mods folder next to it"
         }
     }
 }
 if (-not $modsFolder -and $javaProcs) {
-    Write-Host "  [i] Trying Win32_Process CWD fallback..." -ForegroundColor DarkGray
+    Write-Dim "Trying Win32_Process CWD fallback..."
     foreach ($proc in $javaProcs) {
         try {
             $info = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $($proc.Id)" -ErrorAction Stop
             if ($info -and $info.CurrentDirectory) {
                 $cwd = $info.CurrentDirectory
-                Write-Host "  [i] Win32_Process CWD for PID $($proc.Id): $cwd" -ForegroundColor DarkGray
+                Write-Dim "Win32_Process CWD for PID $($proc.Id): $cwd" 4
                 $candidate = Resolve-InstanceFolders $cwd
                 if ($candidate) {
                     $instanceFolders = $candidate
                     $modsFolder = $candidate.Mods
-                    Write-Host "  [✓] Found via Win32_Process: $modsFolder" -ForegroundColor Green
+                    Write-Ok "mods (via Win32_Process)  $modsFolder"
                     break
                 }
             }
@@ -297,8 +406,8 @@ if (-not $modsFolder -and $javaProcs) {
     }
 }
 if (-not $modsFolder) {
-    Write-Host "`n[!] Could not detect the mods folder. Comparison will be skipped." -ForegroundColor Yellow
-    Write-Host "    Only the basic classloader dumps will be produced." -ForegroundColor Yellow
+    Write-Warn "Could not detect the mods folder. Comparison will be skipped."
+    Write-Dim "Only the basic classloader dumps will be produced." 4
     $CompareMode = $false
 }
 
@@ -344,30 +453,91 @@ function Test-Admin {
 }
 function Install-Temurin {
     if (-not (Test-Admin)) {
-        Write-Host "  [i] Need admin to install the JDK – relaunching elevated..." -ForegroundColor Yellow
+        Write-Info "Need admin to install the JDK – relaunching elevated..."
         Start-Process powershell.exe -Verb RunAs -ArgumentList @("-ExecutionPolicy","Bypass","-File","`"$PSCommandPath`"")
         exit
     }
     $msiPath = Join-Path $env:TEMP $MsiName
-    Write-Host "  [i] Downloading Temurin 25 JDK (~180 MB)..." -ForegroundColor Yellow
+    Write-Info "Downloading Temurin 25 JDK (~180 MB)..."
     try {
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         Invoke-WebRequest -Uri $MsiUrl -OutFile $msiPath -UseBasicParsing
     } catch {
-        Write-Host "  [!] Download failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Fail "Download failed: $($_.Exception.Message)"
         return $null
     }
-    Write-Host "  [i] Installing silently..." -ForegroundColor Yellow
+    Write-Info "Installing silently..."
     Start-Process msiexec.exe -ArgumentList "/i `"$msiPath`" /qn /norestart" -Wait | Out-Null
     Remove-Item $msiPath -ErrorAction SilentlyContinue
     return (Find-Jcmd $null)
 }
 
-Write-Host "`n[i] Locating a JDK (jcmd + jimage + javac + jar + java)..." -ForegroundColor Yellow
+function Test-JavaSupportsAttach([string]$javaPath) {
+    $ErrorActionPreference = 'Continue'
+    if (-not $javaPath -or -not (Test-Path $javaPath -ErrorAction SilentlyContinue)) { return $false }
+    try {
+        $out = & $javaPath --add-modules jdk.attach -version 2>&1
+        if ($LASTEXITCODE -ne 0) { return $false }
+        if (("$out") -match "jdk\.attach|FindException") { return $false }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Find-AllJdkToolCandidates([string]$toolExeName, $proc) {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($PSScriptRoot) {
+        $c = Join-Path $PSScriptRoot $toolExeName
+        if (Test-Path $c -ErrorAction SilentlyContinue) { [void]$candidates.Add($c) }
+    }
+    try {
+        if ($proc -and $proc.Path) {
+            $c = Join-Path (Split-Path $proc.Path) $toolExeName
+            if (Test-Path $c -ErrorAction SilentlyContinue) { [void]$candidates.Add($c) }
+        }
+    } catch {}
+    if ($env:JAVA_HOME) {
+        $c = Join-Path $env:JAVA_HOME "bin\$toolExeName"
+        if (Test-Path $c -ErrorAction SilentlyContinue) { [void]$candidates.Add($c) }
+    }
+    $onPath = Get-Command $toolExeName -ErrorAction SilentlyContinue
+    if ($onPath) { [void]$candidates.Add($onPath.Source) }
+    $roots = @(
+        "C:\Program Files\Eclipse Adoptium",
+        "C:\Program Files\Java",
+        "C:\Program Files\Microsoft",
+        "C:\Program Files\Zulu",
+        "C:\Program Files\Amazon Corretto",
+        "$env:LOCALAPPDATA\Programs\Java"
+    )
+    foreach ($r in $roots) {
+        Get-ChildItem -Path $r -Filter $toolExeName -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+            if (-not $candidates.Contains($_.FullName)) { [void]$candidates.Add($_.FullName) }
+        }
+    }
+    return $candidates
+}
+
+function Find-AttachCapableJdk($proc) {
+    foreach ($javaCandidate in (Find-AllJdkToolCandidates "java.exe" $proc)) {
+        if (-not (Test-JavaSupportsAttach $javaCandidate)) { continue }
+        $bin = Split-Path $javaCandidate -Parent
+        $javacCandidate = Join-Path $bin "javac.exe"
+        $jarCandidate = Join-Path $bin "jar.exe"
+        if ((Test-Path $javacCandidate -ErrorAction SilentlyContinue) -and (Test-Path $jarCandidate -ErrorAction SilentlyContinue)) {
+            return @{ Java = $javaCandidate; Javac = $javacCandidate; Jar = $jarCandidate }
+        }
+    }
+    return $null
+}
+
+Write-Section "Locate JDK"
+Write-Info "Searching for jcmd + jimage + javac + jar + java..."
 $firstJavaProc = if ($javaProcs) { $javaProcs[0] } else { $null }
 $jcmd = Find-Jcmd $firstJavaProc
 if (-not $jcmd) {
-    Write-Host "  [i] jcmd not found locally" -ForegroundColor Yellow
+    Write-Warn "jcmd not found locally"
     $jcmd = Install-Temurin
 }
 $jimage = $null
@@ -375,18 +545,31 @@ $javacExe = $null
 $jarExe = $null
 $javaExe = $null
 if ($jcmd) {
-    Write-Host "  [✓] Using jcmd: $jcmd" -ForegroundColor Green
+    Write-Ok "jcmd    $jcmd"
     $jimage = Find-Jimage $firstJavaProc
     if ($jimage) {
-        Write-Host "  [✓] Using jimage: $jimage" -ForegroundColor Green
+        Write-Ok "jimage  $jimage"
     } else {
-        Write-Host "  [!] jimage.exe not found next to jcmd - JDK platform classes (java.*, javax.*, etc.) won't be pre-whitelisted and may show as unrecognized in the fallback report." -ForegroundColor Yellow
+        Write-Warn "jimage.exe not found next to jcmd - JDK platform classes (java.*, javax.*, etc.) won't be pre-whitelisted and may show as unrecognized in the fallback report."
     }
     $javacExe = Find-JdkTool "javac.exe" $firstJavaProc
     $jarExe   = Find-JdkTool "jar.exe" $firstJavaProc
     $javaExe  = Find-JdkTool "java.exe" $firstJavaProc
+
+    if ($javaExe -and -not (Test-JavaSupportsAttach $javaExe)) {
+        Write-Dim "$javaExe can't resolve the jdk.attach module - probing other JDKs for one that can..." 4
+        $attachCapable = Find-AttachCapableJdk $firstJavaProc
+        if ($attachCapable) {
+            $javaExe = $attachCapable.Java
+            $javacExe = $attachCapable.Javac
+            $jarExe = $attachCapable.Jar
+            Write-Ok "attach-capable JDK  $javaExe"
+        } else {
+            Write-Warn "No attach-capable JDK found on this machine - provenance mode will fail to attach; the jar-scan whitelist will still run."
+        }
+    }
 } else {
-    Write-Host "  [!] Could not obtain a JDK. Classloader dumps require jcmd - aborting." -ForegroundColor Red
+    Write-Fail "Could not obtain a JDK. Classloader dumps require jcmd - aborting."
     exit
 }
 
@@ -432,6 +615,7 @@ function Add-JarFolderToWhitelist([string]$folder, [System.Collections.Generic.H
     $jarCount = 0
     $classCount = 0
     foreach ($jarFile in $jars) {
+        $zip = $null
         try {
             $zip = [System.IO.Compression.ZipFile]::OpenRead($jarFile.FullName)
             $result = Get-ClassesFromZip $zip 0
@@ -442,7 +626,14 @@ function Add-JarFolderToWhitelist([string]$folder, [System.Collections.Generic.H
             $jarCount++
         }
         catch {
-            Write-Host "  [!] Could not read jar: $($jarFile.Name) - $($_.Exception.Message)" -ForegroundColor DarkYellow
+            if ($zip) { try { $zip.Dispose() } catch {} }
+            try {
+                $names = [TolerantZip]::ListEntries($jarFile.FullName)
+                $recovered = Add-EntryNamesToWhitelist $names $exact $packageSet
+                $classCount += $recovered
+                $jarCount++
+            } catch {
+            }
         }
     }
     return @{ JarCount = $jarCount; ClassCount = $classCount }
@@ -459,12 +650,29 @@ function Add-JarFoldersToWhitelist($folders, [System.Collections.Generic.HashSet
     return @{ JarCount = $totalJars; ClassCount = $totalClasses }
 }
 
-function Add-JdkPlatformClassesToWhitelist([string]$jimagePath, [System.Collections.Generic.HashSet[string]]$exact, [System.Collections.Generic.HashSet[string]]$packageSet) {
-    if (-not $jimagePath -or -not (Test-Path $jimagePath -ErrorAction SilentlyContinue)) { return @{ ClassCount = 0 } }
+function Get-TargetModulesImage($proc) {
+    if (-not $proc -or -not $proc.Path) { return $null }
     try {
-        $javaHome = Split-Path (Split-Path $jimagePath -Parent) -Parent
+        $javaHome = Split-Path (Split-Path $proc.Path -Parent) -Parent
         $modulesImage = Join-Path $javaHome "lib\modules"
-        if (-not (Test-Path $modulesImage -ErrorAction SilentlyContinue)) { return @{ ClassCount = 0 } }
+        if (Test-Path $modulesImage -ErrorAction SilentlyContinue) { return $modulesImage }
+    } catch {}
+    return $null
+}
+
+function Add-JdkPlatformClassesToWhitelist([string]$jimagePath, [System.Collections.Generic.HashSet[string]]$exact, [System.Collections.Generic.HashSet[string]]$packageSet, [string]$preferredModulesImage) {
+    if (-not $jimagePath -or -not (Test-Path $jimagePath -ErrorAction SilentlyContinue)) { return @{ ClassCount = 0; UsedTarget = $false } }
+    try {
+        $modulesImage = $null
+        $usedTarget = $false
+        if ($preferredModulesImage -and (Test-Path $preferredModulesImage -ErrorAction SilentlyContinue)) {
+            $modulesImage = $preferredModulesImage
+            $usedTarget = $true
+        } else {
+            $javaHome = Split-Path (Split-Path $jimagePath -Parent) -Parent
+            $modulesImage = Join-Path $javaHome "lib\modules"
+        }
+        if (-not (Test-Path $modulesImage -ErrorAction SilentlyContinue)) { return @{ ClassCount = 0; UsedTarget = $false } }
         $raw = & $jimagePath list $modulesImage 2>&1
         $count = 0
         foreach ($line in $raw) {
@@ -477,9 +685,9 @@ function Add-JdkPlatformClassesToWhitelist([string]$jimagePath, [System.Collecti
             $lastDot = $qualified.LastIndexOf('.')
             if ($lastDot -gt 0) { [void]$packageSet.Add($qualified.Substring(0, $lastDot)) }
         }
-        return @{ ClassCount = $count }
+        return @{ ClassCount = $count; UsedTarget = $usedTarget }
     } catch {
-        return @{ ClassCount = 0 }
+        return @{ ClassCount = 0; UsedTarget = $false }
     }
 }
 
@@ -490,41 +698,42 @@ $AlwaysTrustedPrefixes = @(
     "jdk.internal.vm"
 )
 
-function Build-JarWhitelist($instanceFolders, [string]$jimagePath) {
+function Build-JarWhitelist($instanceFolders, [string]$jimagePath, [string]$preferredModulesImage) {
     $exact = New-Object System.Collections.Generic.HashSet[string]
     $packageSet = New-Object System.Collections.Generic.HashSet[string]
     $prefixes = New-Object System.Collections.Generic.List[string]
     foreach ($p in $AlwaysTrustedPrefixes) { [void]$prefixes.Add($p) }
 
     $modsResult = Add-JarFolderToWhitelist $instanceFolders.Mods $exact $packageSet
-    Write-Host "  [✓] Scanned $($modsResult.JarCount) mod jar(s) (including nested jar-in-jar deps) - $($modsResult.ClassCount) classes" -ForegroundColor Green
+    Write-Ok "mods       $($modsResult.JarCount) jar(s), $($modsResult.ClassCount) classes  (incl. jar-in-jar)"
 
     $libResult = Add-JarFoldersToWhitelist $instanceFolders.Libraries $exact $packageSet
     if ($libResult.JarCount -gt 0) {
-        Write-Host "  [✓] Scanned $($libResult.JarCount) library jar(s) across $($instanceFolders.Libraries.Count) libraries folder(s) - $($libResult.ClassCount) classes" -ForegroundColor Green
+        Write-Ok "libraries  $($libResult.JarCount) jar(s), $($libResult.ClassCount) classes  ($($instanceFolders.Libraries.Count) folder(s))"
     } else {
-        Write-Host "  [i] No libraries folder found next to mods (or it was empty)" -ForegroundColor DarkGray
+        Write-Dim "libraries  none found next to mods (or empty)"
     }
 
     $verResult = Add-JarFoldersToWhitelist $instanceFolders.Versions $exact $packageSet
     if ($verResult.JarCount -gt 0) {
-        Write-Host "  [✓] Scanned $($verResult.JarCount) version/game jar(s) across $($instanceFolders.Versions.Count) versions folder(s) - $($verResult.ClassCount) classes" -ForegroundColor Green
+        Write-Ok "versions   $($verResult.JarCount) jar(s), $($verResult.ClassCount) classes  ($($instanceFolders.Versions.Count) folder(s))"
     } else {
-        Write-Host "  [i] No versions folder found next to mods (or it was empty)" -ForegroundColor DarkGray
+        Write-Dim "versions   none found next to mods (or empty)"
     }
 
     $remapResult = Add-JarFoldersToWhitelist $instanceFolders.Remapped $exact $packageSet
     if ($remapResult.JarCount -gt 0) {
-        Write-Host "  [✓] Scanned $($remapResult.JarCount) remapped game jar(s) - $($remapResult.ClassCount) classes" -ForegroundColor Green
+        Write-Ok "remapped   $($remapResult.JarCount) jar(s), $($remapResult.ClassCount) classes"
     } else {
-        Write-Host "  [i] No .fabric/.quilt remapped-jar cache found next to mods (or it was empty)" -ForegroundColor DarkGray
+        Write-Dim "remapped   no .fabric/.quilt cache found next to mods (or empty)"
     }
 
-    $jdkResult = Add-JdkPlatformClassesToWhitelist $jimagePath $exact $packageSet
+    $jdkResult = Add-JdkPlatformClassesToWhitelist $jimagePath $exact $packageSet $preferredModulesImage
     if ($jdkResult.ClassCount -gt 0) {
-        Write-Host "  [✓] Indexed $($jdkResult.ClassCount) JDK platform classes via jimage" -ForegroundColor Green
+        $sourceNote = if ($jdkResult.UsedTarget) { "target's own runtime image" } else { "located jimage's runtime image" }
+        Write-Ok "jdk        $($jdkResult.ClassCount) platform classes  ($sourceNote)"
     } else {
-        Write-Host "  [i] JDK platform classes were not indexed (jimage unavailable) - java.*/javax.*/etc. may show as unrecognized" -ForegroundColor DarkGray
+        Write-Dim "jdk        not indexed (jimage unavailable) - java.*/javax.*/etc. may show as unrecognized"
     }
 
     $mixinExtrasPresent = $packageSet | Where-Object { $_ -eq "com.llamalad7.mixinextras" -or $_.StartsWith("com.llamalad7.mixinextras.") } | Select-Object -First 1
@@ -532,7 +741,7 @@ function Build-JarWhitelist($instanceFolders, [string]$jimagePath) {
         [void]$prefixes.Add("com.llamalad7.mixinextras.sugar.impl.ref.generated")
     }
 
-    Write-Host "  [✓] Indexed $($exact.Count) classes across $($packageSet.Count) packages`n" -ForegroundColor Green
+    Write-Info "indexed $($exact.Count) classes across $($packageSet.Count) packages"
 
     return @{
         Prefixes = $prefixes
@@ -590,18 +799,25 @@ function Merge-ClasspathIntoWhitelist($whitelist, $entries) {
                     }
             }
             elseif ($path -match '\.jar$') {
-                $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
-                $result = Get-ClassesFromZip $zip 0
+                $zip = $null
+                try {
+                    $zip = [System.IO.Compression.ZipFile]::OpenRead($path)
+                    $result = Get-ClassesFromZip $zip 0
 
-                foreach ($c in $result.Exact) {
-                    [void]$whitelist.Exact.Add($c)
+                    foreach ($c in $result.Exact) {
+                        [void]$whitelist.Exact.Add($c)
+                    }
+
+                    foreach ($p in $result.Packages) {
+                        [void]$whitelist.Packages.Add($p)
+                    }
+
+                    $zip.Dispose()
+                } catch {
+                    if ($zip) { try { $zip.Dispose() } catch {} }
+                    $names = [TolerantZip]::ListEntries($path)
+                    [void](Add-EntryNamesToWhitelist $names $whitelist.Exact $whitelist.Packages)
                 }
-
-                foreach ($p in $result.Packages) {
-                    [void]$whitelist.Packages.Add($p)
-                }
-
-                $zip.Dispose()
             }
         }
         catch {}
@@ -656,6 +872,7 @@ function Extract-ClassNames($rawText) {
 
 
 function Build-ProvenanceAgent([string]$javacPath, [string]$jarPath) {
+    $ErrorActionPreference = 'Continue'
     $buildDir = Join-Path $env:TEMP ("p1ae-provenance-{0}" -f ([guid]::NewGuid().ToString("N").Substring(0, 8)))
     New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
 
@@ -747,6 +964,7 @@ public class AttachLauncher {
 }
 
 function Invoke-ProvenanceAgent([string]$javaPath, [string]$buildDir, [string]$agentJarPath, [int]$pidNum, [string]$outFilePath) {
+    $ErrorActionPreference = 'Continue'
     try {
         $errOut = & $javaPath --add-modules jdk.attach -cp $buildDir AttachLauncher $pidNum $agentJarPath $outFilePath 2>&1
         if ($LASTEXITCODE -ne 0 -or -not (Test-Path $outFilePath -ErrorAction SilentlyContinue)) {
@@ -859,26 +1077,31 @@ function Test-KnownByProvenance($rec, $resolvedTrustedPaths) {
 $ProvenanceMode = $false
 $provenanceAgent = $null
 if ($CompareMode -and $javacExe -and $jarExe -and $javaExe) {
-    Write-Host "`n[i] Building the provenance agent..." -ForegroundColor Yellow
+    Write-Section "Provenance agent"
+    Write-Info "Building the provenance agent..."
     $provenanceAgent = Build-ProvenanceAgent $javacExe $jarExe
     if ($provenanceAgent.Success) {
         $ProvenanceMode = $true
-        Write-Host "  [✓] Provenance agent built - class origin will be checked directly against the running JVM" -ForegroundColor Green
+        Write-Ok "Agent built - class origin will be checked directly against the running JVM"
     } else {
-        Write-Host "  [!] Could not build the provenance agent ($($provenanceAgent.Reason)) - falling back to the jar-scan whitelist only" -ForegroundColor DarkYellow
+        Write-Warn "Could not build the provenance agent ($($provenanceAgent.Reason)) - falling back to the jar-scan whitelist only"
     }
 } elseif ($CompareMode) {
-    Write-Host "`n[i] javac/jar/java not all found next to this JDK - provenance mode unavailable, using the jar-scan whitelist only" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Dim "javac/jar/java not all found next to this JDK - provenance mode unavailable, using the jar-scan whitelist only"
 }
+
+$TargetModulesImage = Get-TargetModulesImage $firstJavaProc
 
 $whitelist = $null
 if ($CompareMode) {
-    Write-Host "`n[i] Building the fallback known-classes whitelist from mods + libraries + versions + JDK..." -ForegroundColor Yellow
+    Write-Section "Known-class whitelist"
+    Write-Info "Building from mods + libraries + versions + JDK..."
     try {
-        $whitelist = Build-JarWhitelist $instanceFolders $jimage
+        $whitelist = Build-JarWhitelist $instanceFolders $jimage $TargetModulesImage
     } catch {
-        Write-Host "  [!] Failed to build whitelist: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "  [i] Continuing in Normal mode (no comparison).`n" -ForegroundColor Yellow
+        Write-Fail "Failed to build whitelist: $($_.Exception.Message)"
+        Write-Info "Continuing in Normal mode (no comparison)."
         $CompareMode = $false
     }
 }
@@ -929,27 +1152,25 @@ if ($ProvenanceMode) {
     ) -join "`r`n" | Set-Content -Path $ProvenanceUnknownFile -Encoding UTF8
 }
 
-$sep = "━" * 111
-Write-Host $sep -ForegroundColor Yellow
-Write-Host "MINECRAFT PROCESS SCANNER" -ForegroundColor Yellow
-Write-Host $sep -ForegroundColor Yellow
-Write-Host ""
+Write-Section "Minecraft process scan"
 $javaProcs = Get-Process -Name javaw -ErrorAction SilentlyContinue
 if (-not $javaProcs) {
-    Write-Host "  [!] No javaw process found" -ForegroundColor Red
-    Write-Host "  [i] Make sure Minecraft is running`n" -ForegroundColor Yellow
+    Write-Fail "No javaw process found"
+    Write-Info "Make sure Minecraft is running"
     foreach ($j in $jobs) { Add-Content $j.File "`r`nNO JAVA PROCESS FOUND – Minecraft was not running." }
     exit
 }
-Write-Host "  [i] Found $($javaProcs.Count) Java process(es)" -ForegroundColor White
+Write-Info "Found $($javaProcs.Count) Java process(es)"
 foreach ($p in $javaProcs) {
     try {
         $up = (Get-Date) - $p.StartTime
-        Write-Host "  ┌─ $($p.Name)  PID $($p.Id)" -ForegroundColor Green
-        Write-Host "  └─ Uptime: $($up.Hours)h $($up.Minutes)m $($up.Seconds)s" -ForegroundColor DarkGreen
+        Write-Host "    ▸ " -NoNewline -ForegroundColor Green
+        Write-Host "$($p.Name)" -NoNewline -ForegroundColor White
+        Write-Host "   PID $($p.Id)" -NoNewline -ForegroundColor Cyan
+        Write-Host "   up $($up.Hours)h $($up.Minutes)m $($up.Seconds)s" -ForegroundColor DarkGray
+        Write-Host ""
     } catch {}
 }
-Write-Host ""
 
 $targetProcs = $javaProcs
 if ($instanceFolders -and $instanceFolders.Base -and $javaProcs) {
@@ -960,20 +1181,19 @@ if ($instanceFolders -and $instanceFolders.Base -and $javaProcs) {
             $matched.Add($p)
         } else {
             $label = if ($procBase) { $procBase } else { "(instance undetermined)" }
-            Write-Host "  [i] PID $($p.Id) belongs to a different instance ($label) - skipping" -ForegroundColor DarkGray
+            Write-Dim "PID $($p.Id) belongs to a different instance ($label) - skipping" 4
         }
     }
     if ($matched.Count -gt 0) {
         $targetProcs = $matched
     } else {
-        Write-Host "  [!] Couldn't match any running process back to the detected instance - falling back to dumping all javaw processes" -ForegroundColor DarkYellow
+        Write-Warn "Couldn't match any running process back to the detected instance - falling back to dumping all javaw processes"
     }
-    Write-Host ""
 }
 
-Write-Host "  [✓] Using jcmd: $jcmd`n" -ForegroundColor Green
+Write-Ok "jcmd  $jcmd"
 if ($CompareMode -and $whitelist) {
-    Write-Host "  [i] Expanding whitelist from the running JVM's actual classpath..." -ForegroundColor Yellow
+    Write-Info "Expanding whitelist from the running JVM's actual classpath..."
     $cpJarsSeen = 0
     foreach ($proc in $targetProcs) {
         try {
@@ -981,21 +1201,19 @@ if ($CompareMode -and $whitelist) {
             Merge-ClasspathIntoWhitelist $whitelist $entries
             $cpJarsSeen += ($entries | Measure-Object).Count
         } catch {
-            Write-Host "  [!] Could not read classpath for PID $($proc.Id): $($_.Exception.Message)" -ForegroundColor DarkYellow
+            Write-Warn "Could not read classpath for PID $($proc.Id): $($_.Exception.Message)"
         }
     }
-    Write-Host "  [✓] Folded in $cpJarsSeen classpath entries`n" -ForegroundColor Green
+    Write-Ok "Folded in $cpJarsSeen classpath entries"
 }
-Write-Host $sep -ForegroundColor Cyan
-Write-Host "RUNNING CLASSLOADER DUMPS" -ForegroundColor Cyan
-Write-Host $sep -ForegroundColor Cyan
-Write-Host ""
+
+Write-Section "Classloader dumps"
 $allUnknown = New-Object System.Collections.Generic.SortedSet[string]
 foreach ($j in $jobs) {
     Add-Content $j.File "`r`nUsing jcmd: $jcmd"
-    Write-Host "  ╔══════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host "  ║ " -NoNewline -ForegroundColor Cyan; Write-Host "$($j.Title)" -ForegroundColor White
-    Write-Host "  ╠══════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "  ◆ " -NoNewline -ForegroundColor Cyan
+    Write-Host "$($j.Title)" -ForegroundColor White
     foreach ($proc in $targetProcs) {
         $pidNum = $proc.Id
         $procPath = if ($proc.Path) { $proc.Path } else { "(path unavailable)" }
@@ -1008,7 +1226,7 @@ foreach ($j in $jobs) {
             $output = & $jcmd $pidNum $j.Cmd.Split(" ") 2>&1
             $outputText = if ($output) { $output -join "`r`n" } else { "(no output)" }
             Add-Content $j.File $outputText
-            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan; Write-Host "[✓] PID $pidNum dumped" -ForegroundColor Green
+            Write-Ok "PID $pidNum dumped" 4
             if ($CompareMode -and $j.Short -eq "Classloaders-Full" -and $output) {
                 $classes = Extract-ClassNames $outputText
                 $unknownForProc = $classes | Where-Object { -not (Test-KnownClass $_ $whitelist) } | Sort-Object
@@ -1020,8 +1238,7 @@ foreach ($j in $jobs) {
                         Add-Content $UnknownFile $u
                         [void]$allUnknown.Add($u)
                     }
-                    Write-Host "  ║ " -NoNewline -ForegroundColor Cyan
-                    Write-Host "[i] $($unknownForProc.Count) unrecognized class(es) for PID $pidNum" -ForegroundColor Magenta
+                    Write-Note "$($unknownForProc.Count) unrecognized class(es) for PID $pidNum" 4
                 } else {
                     Add-Content $UnknownFile "`r`n$('━' * 60)"
                     Add-Content $UnknownFile "PROCESS  : $($proc.ProcessName)   PID: $pidNum  – no unrecognized classes found"
@@ -1030,21 +1247,16 @@ foreach ($j in $jobs) {
             }
         } catch {
             Add-Content $j.File "[!] ATTACH FAILED: $($_.Exception.Message)"
-            Add-Content $j.File "    (A jvm argument like -XX:+DisableAttachMechanism can cause this, Lunar Client has this as default.)"
-            Write-Host "  ║ " -NoNewline -ForegroundColor Cyan; Write-Host "[!] PID $pidNum attach failed" -ForegroundColor Red
+            Add-Content $j.File "    (A cheat that blocks the Attach API can cause this – worth a closer look.)"
+            Write-Fail "PID $pidNum attach failed" 4
         }
     }
     Add-Content $j.File "`r`n$('━' * 60)`r`nEnd of report."
-    Write-Host "  ╚══════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host ""
 }
 
 $allProvenanceUnknown = New-Object System.Collections.Generic.SortedSet[string]
 if ($ProvenanceMode) {
-    Write-Host $sep -ForegroundColor Cyan
-    Write-Host "RUNNING PROVENANCE AGENT" -ForegroundColor Cyan
-    Write-Host $sep -ForegroundColor Cyan
-    Write-Host ""
+    Write-Section "Provenance check"
     foreach ($proc in $targetProcs) {
         $pidNum = $proc.Id
         $reportPath = Join-Path $provenanceAgent.BuildDir ("report_{0}.tsv" -f $pidNum)
@@ -1052,8 +1264,12 @@ if ($ProvenanceMode) {
         Add-Content $ProvenanceFullFile "`r`n$('━' * 60)`r`nPROCESS  : $($proc.ProcessName)   PID: $pidNum`r`n$('━' * 60)"
         if (-not $attachResult.Success) {
             Add-Content $ProvenanceFullFile "[!] AGENT ATTACH FAILED: $($attachResult.Error)"
-            Add-Content $ProvenanceFullFile "    (A jvm argument like -XX:+DisableAttachMechanism can cause this, Lunar Client has this as default.)"
-            Write-Host "  [!] PID $pidNum provenance attach failed" -ForegroundColor Red
+            if ($attachResult.Error -match "jdk\.attach|FindException") {
+                Add-Content $ProvenanceFullFile "    (This specific error means the javac/java this script found - a system-wide install, not the target's own bundled runtime - doesn't have the jdk.attach module in its own boot layer. That's an environment/JDK-distribution mismatch, not a sign of blocking: jcmd above still attached fine using its own built-in mechanism, which is why the Classloaders-* files above are still complete. The Classloaders-Unknown fallback report is the one to check for this run.)"
+            } else {
+                Add-Content $ProvenanceFullFile "    (A cheat that blocks the Attach API can cause this - check whether the jcmd dumps above show the same failure; if THOSE also failed, that's the stronger signal.)"
+            }
+            Write-Fail "PID $pidNum provenance attach failed"
             continue
         }
         $cpEntries = @()
@@ -1071,10 +1287,13 @@ if ($ProvenanceMode) {
                 $unknownCount++
             }
         }
-        Write-Host "  [✓] PID $pidNum - $($records.Count) loaded classes checked by origin, $unknownCount unaccounted for" -ForegroundColor Green
+        if ($unknownCount -gt 0) {
+            Write-Note "PID $pidNum - $($records.Count) loaded classes checked by origin, $unknownCount unaccounted for"
+        } else {
+            Write-Ok "PID $pidNum - $($records.Count) loaded classes checked by origin, 0 unaccounted for"
+        }
     }
     Add-Content $ProvenanceUnknownFile "`r`n$('━' * 60)`r`nTOTAL UNIQUE UNACCOUNTED-FOR CLASSES: $($allProvenanceUnknown.Count)`r`n$('━' * 60)"
-    Write-Host ""
 }
 
 if ($CompareMode) {
@@ -1082,40 +1301,32 @@ if ($CompareMode) {
     Add-Content $UnknownFile "TOTAL UNIQUE UNRECOGNIZED CLASSES: $($allUnknown.Count)"
     Add-Content $UnknownFile ("━" * 60)
 }
-Write-Host ("━" * 50) -ForegroundColor Cyan
-Write-Host "  DUMP COMPLETE" -ForegroundColor Cyan
-Write-Host ("━" * 50) -ForegroundColor Cyan
-Write-Host ""
-foreach ($j in $jobs) {
-    Write-Host "  ╔══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Saved " -NoNewline -ForegroundColor White; Write-Host "$($j.Short).txt" -ForegroundColor Green
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Path  " -NoNewline -ForegroundColor White; Write-Host "$($j.File)" -ForegroundColor DarkGray
-    Write-Host "  ╚══════════════════════════════════════════" -ForegroundColor DarkGray
+
+function Write-SavedFile([string]$name, [string]$path, [string]$extra = "", [string]$extraColor = "DarkGray") {
+    Write-Host "  ✓ " -NoNewline -ForegroundColor Green
+    Write-Host $name -NoNewline -ForegroundColor White
+    if ($extra) { Write-Host "  $extra" -NoNewline -ForegroundColor $extraColor }
     Write-Host ""
+    Write-Host "      $path" -ForegroundColor DarkGray
+}
+
+Write-Section "Done - files saved"
+foreach ($j in $jobs) {
+    Write-SavedFile "$($j.Short).txt" $j.File
 }
 if ($CompareMode) {
-    Write-Host "  ╔══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Saved " -NoNewline -ForegroundColor White
-    Write-Host "Classloaders-Unknown.txt ($($allUnknown.Count) unique)" -ForegroundColor Magenta
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Path  " -NoNewline -ForegroundColor White; Write-Host "$UnknownFile" -ForegroundColor DarkGray
-    Write-Host "  ╚══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host ""
+    $uc = if ($allUnknown.Count -gt 0) { "Magenta" } else { "Green" }
+    Write-SavedFile "Classloaders-Unknown.txt" $UnknownFile "($($allUnknown.Count) unique)" $uc
 }
 if ($ProvenanceMode) {
-    Write-Host "  ╔══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Saved " -NoNewline -ForegroundColor White; Write-Host "Provenance-Full.txt" -ForegroundColor Green
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Path  " -NoNewline -ForegroundColor White; Write-Host "$ProvenanceFullFile" -ForegroundColor DarkGray
-    Write-Host "  ╚══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host ""
-    Write-Host "  ╔══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Saved " -NoNewline -ForegroundColor White
-    Write-Host "Provenance-Unknown.txt ($($allProvenanceUnknown.Count) unique)" -ForegroundColor Magenta
-    Write-Host "  ║ " -NoNewline -ForegroundColor DarkGray; Write-Host "Path  " -NoNewline -ForegroundColor White; Write-Host "$ProvenanceUnknownFile" -ForegroundColor DarkGray
-    Write-Host "  ╚══════════════════════════════════════════" -ForegroundColor DarkGray
-    Write-Host ""
+    Write-SavedFile "Provenance-Full.txt" $ProvenanceFullFile
+    $pc = if ($allProvenanceUnknown.Count -gt 0) { "Magenta" } else { "Green" }
+    Write-SavedFile "Provenance-Unknown.txt" $ProvenanceUnknownFile "  ($($allProvenanceUnknown.Count) unique)" $pc
 }
 if ($CompareMode) {
     $fileCount = if ($ProvenanceMode) { "ALL FIVE" } else { "ALL THREE" }
-    Write-Host "  [i] Send $fileCount .txt files to the staff member running your SS.`n" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Box @("Send $fileCount .txt files to the staff member running your SS.") 'Green' @('White')
+    Write-Host ""
 }
 exit
