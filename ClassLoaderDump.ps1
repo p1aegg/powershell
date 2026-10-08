@@ -1,6 +1,11 @@
 [System.Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 $ErrorActionPreference = "Stop"
+$gCheck=[string][char]0x2713; $gChev=[string][char]0x203A; $gDot=[string][char]0x00B7; $gWarn=[string][char]0x25B2
+$gCross=[string][char]0x2717; $gDiamond=[string][char]0x25C6; $gH=[string][char]0x2500; $gTL=[string][char]0x256D
+$gTR=[string][char]0x256E; $gV=[string][char]0x2502; $gBL=[string][char]0x2570; $gBR=[string][char]0x256F
+$gPrompt=[string][char]0x276F; $gArrow=[string][char]0x2192; $gDash=[string][char]0x2013; $gBar=[string][char]0x2501
+$gTri=[string][char]0x25B8
 
 $script:W = 76
 $script:SectionNo = 0
@@ -9,12 +14,12 @@ function Write-Line([string]$glyph, [string]$gc, [string]$msg, [string]$mc = 'Gr
     Write-Host ((' ' * $indent) + $glyph + ' ') -NoNewline -ForegroundColor $gc
     Write-Host $msg -ForegroundColor $mc
 }
-function Write-Ok([string]$m, [int]$i = 2)   { Write-Line '✓' 'Green'    $m 'White'    $i }
-function Write-Info([string]$m, [int]$i = 2) { Write-Line '›' 'DarkCyan' $m 'Gray'     $i }
-function Write-Dim([string]$m, [int]$i = 2)  { Write-Line '·' 'DarkGray' $m 'DarkGray' $i }
-function Write-Warn([string]$m, [int]$i = 2) { Write-Line '▲' 'Yellow'   $m 'Yellow'   $i }
-function Write-Fail([string]$m, [int]$i = 2) { Write-Line '✗' 'Red'      $m 'Red'      $i }
-function Write-Note([string]$m, [int]$i = 2) { Write-Line '◆' 'Magenta'  $m 'Magenta'  $i }
+function Write-Ok([string]$m, [int]$i = 2)   { Write-Line $gCheck 'Green'    $m 'White'    $i }
+function Write-Info([string]$m, [int]$i = 2) { Write-Line $gChev 'DarkCyan' $m 'Gray'     $i }
+function Write-Dim([string]$m, [int]$i = 2)  { Write-Line $gDot 'DarkGray' $m 'DarkGray' $i }
+function Write-Warn([string]$m, [int]$i = 2) { Write-Line $gWarn 'Yellow'   $m 'Yellow'   $i }
+function Write-Fail([string]$m, [int]$i = 2) { Write-Line $gCross 'Red'      $m 'Red'      $i }
+function Write-Note([string]$m, [int]$i = 2) { Write-Line $gDiamond 'Magenta'  $m 'Magenta'  $i }
 
 function Write-Section([string]$title) {
     $script:SectionNo++
@@ -24,19 +29,19 @@ function Write-Section([string]$title) {
     Write-Host ""
     Write-Host ("  {0:00}" -f $script:SectionNo) -NoNewline -ForegroundColor Cyan
     Write-Host "  $label " -NoNewline -ForegroundColor White
-    Write-Host ('─' * $fill) -ForegroundColor DarkGray
+    Write-Host ($gH * $fill) -ForegroundColor DarkGray
 }
 
 function Write-Box([string[]]$lines, [string]$color = 'Cyan', [string[]]$colors = $null) {
     $inner = $script:W - 4
-    Write-Host ('╭' + ('─' * ($script:W - 2)) + '╮') -ForegroundColor $color
+    Write-Host ($gTL + ($gH * ($script:W - 2)) + $gTR) -ForegroundColor $color
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $c = if ($colors -and $i -lt $colors.Count) { $colors[$i] } else { 'White' }
-        Write-Host '│ ' -NoNewline -ForegroundColor $color
+        Write-Host ($gV + ' ') -NoNewline -ForegroundColor $color
         Write-Host ([string]$lines[$i]).PadRight($inner) -NoNewline -ForegroundColor $c
-        Write-Host ' │' -ForegroundColor $color
+        Write-Host (' ' + $gV) -ForegroundColor $color
     }
-    Write-Host ('╰' + ('─' * ($script:W - 2)) + '╯') -ForegroundColor $color
+    Write-Host ($gBL + ($gH * ($script:W - 2)) + $gBR) -ForegroundColor $color
 }
 
 Clear-Host
@@ -50,11 +55,11 @@ Write-Box @(
 
 Write-Host ""
 Write-Host "  Select an action" -ForegroundColor White
-Write-Host ("  " + ('─' * ($script:W - 4))) -ForegroundColor DarkGray
+Write-Host ("  " + ($gH * ($script:W - 4))) -ForegroundColor DarkGray
 Write-Host "   [1]" -NoNewline -ForegroundColor Cyan;  Write-Host "  Start" -ForegroundColor White
 Write-Host "   [2]" -NoNewline -ForegroundColor Cyan;  Write-Host "  Exit" -ForegroundColor White
 Write-Host ""
-Write-Host "  press 1 or 2 ❯ " -NoNewline -ForegroundColor DarkGray
+Write-Host "  press 1 or 2 $gPrompt " -NoNewline -ForegroundColor DarkGray
 $key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
 $choice = $key.Character.ToString()
 Write-Host $choice -ForegroundColor Cyan
@@ -237,6 +242,19 @@ function Get-RemapCacheFolders([string]$base) {
     return $found
 }
 
+$EssentialModJarPattern = '^Essential_[0-9][0-9.\-]*_[A-Za-z]+_[0-9][0-9.\-]*\.jar$'
+function Get-EssentialFolders([string]$base) {
+    $found = New-Object System.Collections.Generic.List[string]
+    $modsDir = Join-Path $base "mods"
+    $candidate = Join-Path $base "essential"
+    if (-not (Test-Path $modsDir -ErrorAction SilentlyContinue)) { return $found }
+    if (-not (Test-Path $candidate -ErrorAction SilentlyContinue)) { return $found }
+    $essentialJar = Get-ChildItem -LiteralPath $modsDir -Filter "*.jar" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $EssentialModJarPattern } | Select-Object -First 1
+    if ($essentialJar) { [void]$found.Add($candidate) }
+    return $found
+}
+
 function Find-UpwardFolders([string]$startDir, [string]$folderName, [int]$maxDepth = 6) {
     $found = New-Object System.Collections.Generic.List[string]
     $current = $startDir
@@ -263,6 +281,7 @@ function Resolve-InstanceFolders([string]$cwd) {
                 Libraries = (Find-UpwardFolders $base "libraries")
                 Versions  = (Find-UpwardFolders $base "versions")
                 Remapped  = (Get-RemapCacheFolders $base)
+                Essential = (Get-EssentialFolders $base)
                 Base      = $base
             }
         }
@@ -277,6 +296,7 @@ function Resolve-InstanceFolders([string]$cwd) {
                         Libraries = (Find-UpwardFolders $base "libraries")
                         Versions  = (Find-UpwardFolders $base "versions")
                         Remapped  = (Get-RemapCacheFolders $base)
+                        Essential = (Get-EssentialFolders $base)
                         Base      = $base
                     }
                 }
@@ -348,7 +368,7 @@ function Find-LatestInstanceByLog {
         } catch {}
     }
     Write-Dim "Checked $checked instance log(s) across all known launchers" 4
-    if ($bestBase) { Write-Dim "Newest latest.log: $bestTime  →  $bestBase" 4 }
+    if ($bestBase) { Write-Dim "Newest latest.log: $bestTime  $gArrow  $bestBase" 4 }
     return $bestBase
 }
 
@@ -373,7 +393,7 @@ if ($javaProcs) {
     }
 }
 if (-not $modsFolder) {
-    Write-Dim "PEB path found no mods folder – scanning every launcher's instances for the newest logs\latest.log..."
+    Write-Dim "PEB path found no mods folder $gDash scanning every launcher's instances for the newest logs\latest.log..."
     $latestBase = Find-LatestInstanceByLog
     if ($latestBase) {
         $candidate = Resolve-InstanceFolders $latestBase
@@ -453,7 +473,7 @@ function Test-Admin {
 }
 function Install-Temurin {
     if (-not (Test-Admin)) {
-        Write-Info "Need admin to install the JDK – relaunching elevated..."
+        Write-Info "Need admin to install the JDK $gDash relaunching elevated..."
         Start-Process powershell.exe -Verb RunAs -ArgumentList @("-ExecutionPolicy","Bypass","-File","`"$PSCommandPath`"")
         exit
     }
@@ -728,6 +748,13 @@ function Build-JarWhitelist($instanceFolders, [string]$jimagePath, [string]$pref
         Write-Dim "remapped   no .fabric/.quilt cache found next to mods (or empty)"
     }
 
+    $essResult = Add-JarFoldersToWhitelist $instanceFolders.Essential $exact $packageSet
+    if ($essResult.JarCount -gt 0) {
+        Write-Ok "essential  $($essResult.JarCount) jar(s), $($essResult.ClassCount) classes"
+    } else {
+        Write-Dim "essential  not trusted (no Essential_<ver>_<loader>_<mc>.jar in mods, or no essential folder)"
+    }
+
     $jdkResult = Add-JdkPlatformClassesToWhitelist $jimagePath $exact $packageSet $preferredModulesImage
     if ($jdkResult.ClassCount -gt 0) {
         $sourceNote = if ($jdkResult.UsedTarget) { "target's own runtime image" } else { "located jimage's runtime image" }
@@ -857,12 +884,12 @@ function Test-KnownClass($className, $whitelist) {
 
 function Extract-ClassNames($rawText) {
     $found = New-Object System.Collections.Generic.HashSet[string]
-    $pattern = '(?:[a-zA-Z_$][a-zA-Z0-9_$]*\.)+[a-zA-Z_$][a-zA-Z0-9_$]*'
+    $pattern = '(?:[a-zA-Z_$][a-zA-Z0-9_$-]*\.)+[a-zA-Z_$-][a-zA-Z0-9_$-]*'
     foreach ($line in ($rawText -split "`r?`n")) {
         if ($line -match 'unique loaded classes' -or $line -match '^COMMAND' -or
-            $line -match '^PROCESS' -or $line -match '^EXE' -or $line -match '^━+$') { continue }
+            $line -match '^PROCESS' -or $line -match '^EXE' -or $line -match '^\u2501+$') { continue }
         $clean = $line -replace '@[0-9a-fA-F]+', ''
-        $clean = $clean -replace '\[+L([a-zA-Z_$][a-zA-Z0-9_$.]*);', '$1'
+        $clean = $clean -replace '\[+L([a-zA-Z_$][a-zA-Z0-9_$.-]*);', '$1'
         foreach ($m in [regex]::Matches($clean, $pattern)) {
             [void]$found.Add($m.Value)
         }
@@ -1060,6 +1087,15 @@ function Test-KnownByProvenance($rec, $resolvedTrustedPaths) {
     if ($loc -and $loc.Type -eq "FILE" -and $loc.Path) {
         $hit = Find-TrustedPathMatch $loc.Path $resolvedTrustedPaths
         if ($hit) { return @{ Known = $true; Reason = "loaded from $hit" } }
+        if ($script:EssentialTrusted -and $rec.Loader -match 'gg\.essential\.util\.classloader\.RelaunchClassLoader') {
+            $leaf = Split-Path $loc.Path -Leaf
+            $dir = (Split-Path $loc.Path -Parent).TrimEnd('\', '/')
+            $tempDirs = @([System.IO.Path]::GetTempPath(), $env:TEMP, $env:TMP) | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\', '/') }
+            $inTemp = ($tempDirs | Where-Object { $_ -ieq $dir } | Select-Object -First 1) -or ($dir -imatch '\\AppData\\Local\\Temp$')
+            if ($inTemp -and $leaf -match '^essential-lwjgl[0-9]+\.jar$') {
+                return @{ Known = $true; Reason = "Essential's extracted LWJGL jar in the temp folder (Essential is installed in mods)" }
+            }
+        }
         return @{ Known = $false; Reason = "loaded from a file outside all known locations: $($loc.Path)" }
     }
 
@@ -1120,7 +1156,7 @@ foreach ($j in $jobs) {
         "Command  : jcmd <pid> $($j.Title)"
         "Date     : $(Get-Date)"
         "Machine  : $env:COMPUTERNAME   User: $env:USERNAME"
-        ("━" * 60)
+        ($gBar * 60)
     ) -join "`r`n" | Set-Content -Path $j.File -Encoding UTF8
 }
 $UnknownFile = $null
@@ -1131,8 +1167,8 @@ if ($CompareMode) {
         "Mods folder scanned : $modsFolder"
         "Date                : $(Get-Date)"
         "Machine             : $env:COMPUTERNAME   User: $env:USERNAME"
-        ("━" * 60)
-        ("━" * 60)
+        ($gBar * 60)
+        ($gBar * 60)
     ) -join "`r`n" | Set-Content -Path $UnknownFile -Encoding UTF8
 }
 $ProvenanceFullFile = $null
@@ -1143,12 +1179,12 @@ if ($ProvenanceMode) {
     @(
         "P1ae's Classloader Dump - PROVENANCE REPORT"
         "Date     : $(Get-Date)"
-        ("━" * 60)
+        ($gBar * 60)
     ) -join "`r`n" | Set-Content -Path $ProvenanceFullFile -Encoding UTF8
     @(
         "P1ae's Classloader Dump - PROVENANCE UNKNOWN CLASSES REPORT"
         "Date     : $(Get-Date)"
-        ("━" * 60)
+        ($gBar * 60)
     ) -join "`r`n" | Set-Content -Path $ProvenanceUnknownFile -Encoding UTF8
 }
 
@@ -1157,14 +1193,14 @@ $javaProcs = Get-Process -Name javaw -ErrorAction SilentlyContinue
 if (-not $javaProcs) {
     Write-Fail "No javaw process found"
     Write-Info "Make sure Minecraft is running"
-    foreach ($j in $jobs) { Add-Content $j.File "`r`nNO JAVA PROCESS FOUND – Minecraft was not running." }
+    foreach ($j in $jobs) { Add-Content $j.File "`r`nNO JAVA PROCESS FOUND $gDash Minecraft was not running." }
     exit
 }
 Write-Info "Found $($javaProcs.Count) Java process(es)"
 foreach ($p in $javaProcs) {
     try {
         $up = (Get-Date) - $p.StartTime
-        Write-Host "    ▸ " -NoNewline -ForegroundColor Green
+        Write-Host "    $gTri " -NoNewline -ForegroundColor Green
         Write-Host "$($p.Name)" -NoNewline -ForegroundColor White
         Write-Host "   PID $($p.Id)" -NoNewline -ForegroundColor Cyan
         Write-Host "   up $($up.Hours)h $($up.Minutes)m $($up.Seconds)s" -ForegroundColor DarkGray
@@ -1212,16 +1248,16 @@ $allUnknown = New-Object System.Collections.Generic.SortedSet[string]
 foreach ($j in $jobs) {
     Add-Content $j.File "`r`nUsing jcmd: $jcmd"
     Write-Host ""
-    Write-Host "  ◆ " -NoNewline -ForegroundColor Cyan
+    Write-Host "  $gDiamond " -NoNewline -ForegroundColor Cyan
     Write-Host "$($j.Title)" -ForegroundColor White
     foreach ($proc in $targetProcs) {
         $pidNum = $proc.Id
         $procPath = if ($proc.Path) { $proc.Path } else { "(path unavailable)" }
-        Add-Content $j.File "`r`n$('━' * 60)"
+        Add-Content $j.File "`r`n$($gBar * 60)"
         Add-Content $j.File "PROCESS  : $($proc.ProcessName)   PID: $pidNum"
         Add-Content $j.File "EXE      : $procPath"
         Add-Content $j.File "COMMAND  : jcmd $pidNum $($j.Cmd)"
-        Add-Content $j.File ("━" * 60)
+        Add-Content $j.File ($gBar * 60)
         try {
             $output = & $jcmd $pidNum $j.Cmd.Split(" ") 2>&1
             $outputText = if ($output) { $output -join "`r`n" } else { "(no output)" }
@@ -1231,37 +1267,38 @@ foreach ($j in $jobs) {
                 $classes = Extract-ClassNames $outputText
                 $unknownForProc = $classes | Where-Object { -not (Test-KnownClass $_ $whitelist) } | Sort-Object
                 if ($unknownForProc) {
-                    Add-Content $UnknownFile "`r`n$('━' * 60)"
+                    Add-Content $UnknownFile "`r`n$($gBar * 60)"
                     Add-Content $UnknownFile "PROCESS  : $($proc.ProcessName)   PID: $pidNum"
-                    Add-Content $UnknownFile ("━" * 60)
+                    Add-Content $UnknownFile ($gBar * 60)
                     foreach ($u in $unknownForProc) {
                         Add-Content $UnknownFile $u
                         [void]$allUnknown.Add($u)
                     }
                     Write-Note "$($unknownForProc.Count) unrecognized class(es) for PID $pidNum" 4
                 } else {
-                    Add-Content $UnknownFile "`r`n$('━' * 60)"
-                    Add-Content $UnknownFile "PROCESS  : $($proc.ProcessName)   PID: $pidNum  – no unrecognized classes found"
-                    Add-Content $UnknownFile ("━" * 60)
+                    Add-Content $UnknownFile "`r`n$($gBar * 60)"
+                    Add-Content $UnknownFile "PROCESS  : $($proc.ProcessName)   PID: $pidNum  $gDash no unrecognized classes found"
+                    Add-Content $UnknownFile ($gBar * 60)
                 }
             }
         } catch {
             Add-Content $j.File "[!] ATTACH FAILED: $($_.Exception.Message)"
-            Add-Content $j.File "    (A cheat that blocks the Attach API can cause this – worth a closer look.)"
+            Add-Content $j.File "    (A cheat that blocks the Attach API can cause this $gDash worth a closer look.)"
             Write-Fail "PID $pidNum attach failed" 4
         }
     }
-    Add-Content $j.File "`r`n$('━' * 60)`r`nEnd of report."
+    Add-Content $j.File "`r`n$($gBar * 60)`r`nEnd of report."
 }
 
 $allProvenanceUnknown = New-Object System.Collections.Generic.SortedSet[string]
+$script:EssentialTrusted = [bool]($instanceFolders -and $instanceFolders.Essential -and (@($instanceFolders.Essential).Count -gt 0))
 if ($ProvenanceMode) {
     Write-Section "Provenance check"
     foreach ($proc in $targetProcs) {
         $pidNum = $proc.Id
         $reportPath = Join-Path $provenanceAgent.BuildDir ("report_{0}.tsv" -f $pidNum)
         $attachResult = Invoke-ProvenanceAgent $javaExe $provenanceAgent.BuildDir $provenanceAgent.AgentJar $pidNum $reportPath
-        Add-Content $ProvenanceFullFile "`r`n$('━' * 60)`r`nPROCESS  : $($proc.ProcessName)   PID: $pidNum`r`n$('━' * 60)"
+        Add-Content $ProvenanceFullFile "`r`n$($gBar * 60)`r`nPROCESS  : $($proc.ProcessName)   PID: $pidNum`r`n$($gBar * 60)"
         if (-not $attachResult.Success) {
             Add-Content $ProvenanceFullFile "[!] AGENT ATTACH FAILED: $($attachResult.Error)"
             if ($attachResult.Error -match "jdk\.attach|FindException") {
@@ -1274,7 +1311,7 @@ if ($ProvenanceMode) {
         }
         $cpEntries = @()
         try { $cpEntries = Get-ClassPathEntries $jcmd $pidNum } catch {}
-        $trustedRaw = @($instanceFolders.Mods) + @($instanceFolders.Libraries) + @($instanceFolders.Versions) + @($instanceFolders.Remapped) + @($cpEntries) + @($provenanceAgent.AgentJar)
+        $trustedRaw = @($instanceFolders.Mods) + @($instanceFolders.Libraries) + @($instanceFolders.Versions) + @($instanceFolders.Remapped) + @($instanceFolders.Essential) + @($cpEntries) + @($provenanceAgent.AgentJar)
         $resolvedTrustedPaths = Resolve-TrustedPaths $trustedRaw
         $records = Import-ProvenanceReport $reportPath
         $unknownCount = 0
@@ -1293,17 +1330,17 @@ if ($ProvenanceMode) {
             Write-Ok "PID $pidNum - $($records.Count) loaded classes checked by origin, 0 unaccounted for"
         }
     }
-    Add-Content $ProvenanceUnknownFile "`r`n$('━' * 60)`r`nTOTAL UNIQUE UNACCOUNTED-FOR CLASSES: $($allProvenanceUnknown.Count)`r`n$('━' * 60)"
+    Add-Content $ProvenanceUnknownFile "`r`n$($gBar * 60)`r`nTOTAL UNIQUE UNACCOUNTED-FOR CLASSES: $($allProvenanceUnknown.Count)`r`n$($gBar * 60)"
 }
 
 if ($CompareMode) {
-    Add-Content $UnknownFile "`r`n$('━' * 60)"
+    Add-Content $UnknownFile "`r`n$($gBar * 60)"
     Add-Content $UnknownFile "TOTAL UNIQUE UNRECOGNIZED CLASSES: $($allUnknown.Count)"
-    Add-Content $UnknownFile ("━" * 60)
+    Add-Content $UnknownFile ($gBar * 60)
 }
 
 function Write-SavedFile([string]$name, [string]$path, [string]$extra = "", [string]$extraColor = "DarkGray") {
-    Write-Host "  ✓ " -NoNewline -ForegroundColor Green
+    Write-Host "  $gCheck " -NoNewline -ForegroundColor Green
     Write-Host $name -NoNewline -ForegroundColor White
     if ($extra) { Write-Host "  $extra" -NoNewline -ForegroundColor $extraColor }
     Write-Host ""
