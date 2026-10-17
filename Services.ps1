@@ -348,8 +348,6 @@ try {
     Write-Host "  Error accessing system information: $($_.Exception.Message)" -ForegroundColor Red
 }
 
-Write-Host "`nCheck complete." -ForegroundColor Cyan
-
 function Enable-DisabledServices {
     foreach ($item in $script:DisabledServices) {
         try {
@@ -392,7 +390,7 @@ $svcCount = $script:DisabledServices.Count
 $regCount = $script:BadRegistry.Count
 
 if ($svcCount -eq 0 -and $regCount -eq 0) {
-    Write-Host "`nNo disabled services or registry settings found. Nothing to fix." -ForegroundColor Green
+    Write-Host "`nNo disabled services or registry settings found." -ForegroundColor Green
     exit
 }
 
