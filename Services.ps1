@@ -1,5 +1,3 @@
-#Requires -Version 5.1
-
 $isAdmin = [System.Security.Principal.WindowsPrincipal]::new([System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
     Write-Host "`n==================================================" -ForegroundColor Red
@@ -12,11 +10,9 @@ if (-not $isAdmin) {
 Write-Host "System Check" -ForegroundColor Cyan
 Write-Host ""
 
-# Collected during the scan, used by the fix menu at the end
 $script:DisabledServices = [System.Collections.Generic.List[hashtable]]::new()
 $script:BadRegistry      = [System.Collections.Generic.List[hashtable]]::new()
 
-# ---------------------------------------------------------------- BOOT TIME
 try {
     $bootTime = (Get-CimInstance -ClassName Win32_OperatingSystem).LastBootUpTime
     $uptime = (Get-Date) - $bootTime
@@ -27,7 +23,6 @@ try {
     Write-Host "Unable to retrieve boot time information" -ForegroundColor Red
 }
 
-# ------------------------------------------------------------------- DRIVES
 $drives = Get-CimInstance -ClassName Win32_LogicalDisk | Where-Object { $_.DriveType -ne 5 }
 if ($drives) {
     Write-Host "`nCONNECTED DRIVES" -ForegroundColor Cyan
@@ -36,7 +31,6 @@ if ($drives) {
     }
 }
 
-# ----------------------------------------------------------------- SERVICES
 Write-Host "`nSERVICE STATUS" -ForegroundColor Cyan
 
 $services = @(
@@ -63,20 +57,24 @@ foreach ($svc in $services) {
 
         if ($service.Status -eq "Running") {
             Write-Host ("  {0,-12} {1,-40}" -f $svc.Name, $displayName) -ForegroundColor Green -NoNewline
-            try {
-                $process = Get-CimInstance Win32_Service -Filter "Name='$($svc.Name)'" | Select-Object ProcessId
-                if ($process.ProcessId -gt 0) {
-                    $proc = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
-                    if ($proc) {
-                        Write-Host (" | {0}" -f $proc.StartTime.ToString("HH:mm:ss")) -ForegroundColor Yellow
+            if ($svc.Name -eq "Bam") {
+                Write-Host " | Enabled" -ForegroundColor Yellow
+            } else {
+                try {
+                    $process = Get-CimInstance Win32_Service -Filter "Name='$($svc.Name)'" | Select-Object ProcessId
+                    if ($process.ProcessId -gt 0) {
+                        $proc = Get-Process -Id $process.ProcessId -ErrorAction SilentlyContinue
+                        if ($proc) {
+                            Write-Host (" | {0}" -f $proc.StartTime.ToString("HH:mm:ss")) -ForegroundColor Yellow
+                        } else {
+                            Write-Host " | N/A" -ForegroundColor Yellow
+                        }
                     } else {
                         Write-Host " | N/A" -ForegroundColor Yellow
                     }
-                } else {
+                } catch {
                     Write-Host " | N/A" -ForegroundColor Yellow
                 }
-            } catch {
-                Write-Host " | N/A" -ForegroundColor Yellow
             }
         } else {
             Write-Host ("  {0,-12} {1,-40} {2}" -f $svc.Name, $displayName, $service.Status) -ForegroundColor Red
@@ -84,7 +82,6 @@ foreach ($svc in $services) {
         }
     }
     elseif ($svc.Name -eq "Bam") {
-        # BAM is a kernel driver, so Get-Service does not list it. Check the registry instead.
         $bamKey = "HKLM:\SYSTEM\CurrentControlSet\Services\bam"
         $start = (Get-ItemProperty -Path $bamKey -Name Start -ErrorAction SilentlyContinue).Start
         if ($null -eq $start) {
@@ -102,11 +99,8 @@ foreach ($svc in $services) {
     }
 }
 
-# ----------------------------------------------------------------- REGISTRY
 Write-Host "`nREGISTRY" -ForegroundColor Cyan
 
-# BadValues  = values that count as a problem
-# FixValue   = value to write when fixing (or $null to delete the value)
 $settings = @(
     @{ Name = "CMD";                Path = "HKCU:\Software\Policies\Microsoft\Windows\System"; Key = "DisableCMD";
        BadValues = @(1, 2); FixValue = $null; Warning = "Disabled"; Safe = "Available" },
@@ -130,7 +124,6 @@ foreach ($s in $settings) {
     }
 }
 
-# --------------------------------------------------------------- EVENT LOGS
 function Check-EventLog {
     param ($logName, $eventID, $message)
     $event = Get-WinEvent -LogName $logName -FilterXPath "*[System[EventID=$eventID]]" -MaxEvents 1 -ErrorAction SilentlyContinue
@@ -184,7 +177,6 @@ Check-EventLog "Security" 4616 "System time changed"
 Check-EventLog "System" 6005 "Event Log Service started"
 Check-DeviceDeleted
 
-# ----------------------------------------------------------------- PREFETCH
 $prefetchPath = "$env:SystemRoot\Prefetch"
 if (Test-Path $prefetchPath) {
     Write-Host "`nPREFETCH INTEGRITY" -ForegroundColor Cyan
@@ -276,7 +268,6 @@ if (Test-Path $prefetchPath) {
     Write-Host "`nCouldn't find the prefetch folder (check your paths)" -ForegroundColor Red
 }
 
-# -------------------------------------------------- RECYCLE BIN / HISTORY
 try {
     $recycleBinPath = "$env:SystemDrive" + '\$Recycle.Bin'
 
@@ -359,15 +350,10 @@ try {
 
 Write-Host "`nCheck complete." -ForegroundColor Cyan
 
-# ======================================================================
-#  FIX OPTIONS: enable disabled services and registry settings
-# ======================================================================
-
 function Enable-DisabledServices {
     foreach ($item in $script:DisabledServices) {
         try {
             if ($item.Type -eq "Driver") {
-                # BAM driver: Start=1 (system start). Takes effect after a reboot.
                 Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\bam" -Name Start -Value 1 -ErrorAction Stop
                 Write-Host ("  [OK] {0}: start type restored (reboot required)" -f $item.Name) -ForegroundColor Green
                 continue
@@ -421,7 +407,7 @@ if ($regCount -gt 0) {
 }
 
 Write-Host ""
-Write-Host "  [1] Enable disabled services and registry" -ForegroundColor White
+Write-Host "  [1] Enable disabled services or registry" -ForegroundColor White
 Write-Host "  [2] Exit without changing anything" -ForegroundColor White
 
 $choice = Read-Host "`nSelect an option"
@@ -434,4 +420,4 @@ switch ($choice) {
     default { Write-Host "`nNo changes made." -ForegroundColor Gray; exit }
 }
 
-Write-Host "`nDone. Some changes (Prefetch, BAM) may need a reboot to take effect." -ForegroundColor Cyan
+Write-Host "`nDone. Make sure to restart your PC." -ForegroundColor Cyan
