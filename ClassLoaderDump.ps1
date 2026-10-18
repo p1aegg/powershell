@@ -48,7 +48,7 @@ Clear-Host
 Write-Host ""
 Write-Box @(
     "C L A S S L O A D E R   D U M P",
-    "v1.2.1",
+    "v1.2.2",
     "",
     "Dm .p1ae for Questions or Bugs"
 ) 'Cyan' @('Cyan', 'DarkGray', 'White', 'Gray', 'Gray')
@@ -255,6 +255,19 @@ function Get-EssentialFolders([string]$base) {
     return $found
 }
 
+$AuroraModJarPattern = '^aurora([-_][0-9][0-9A-Za-z.\-+_]*)?\.jar$'
+function Get-AuroraFolders([string]$base) {
+    $found = New-Object System.Collections.Generic.List[string]
+    $modsDir = Join-Path $base "mods"
+    $candidate = Join-Path $base "aurora"
+    if (-not (Test-Path $modsDir -ErrorAction SilentlyContinue)) { return $found }
+    if (-not (Test-Path $candidate -ErrorAction SilentlyContinue)) { return $found }
+    $auroraJar = Get-ChildItem -LiteralPath $modsDir -Filter "*.jar" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match $AuroraModJarPattern } | Select-Object -First 1
+    if ($auroraJar) { [void]$found.Add($candidate) }
+    return $found
+}
+
 function Find-UpwardFolders([string]$startDir, [string]$folderName, [int]$maxDepth = 6) {
     $found = New-Object System.Collections.Generic.List[string]
     $current = $startDir
@@ -282,6 +295,7 @@ function Resolve-InstanceFolders([string]$cwd) {
                 Versions  = (Find-UpwardFolders $base "versions")
                 Remapped  = (Get-RemapCacheFolders $base)
                 Essential = (Get-EssentialFolders $base)
+                Aurora    = (Get-AuroraFolders $base)
                 Base      = $base
             }
         }
@@ -297,6 +311,7 @@ function Resolve-InstanceFolders([string]$cwd) {
                         Versions  = (Find-UpwardFolders $base "versions")
                         Remapped  = (Get-RemapCacheFolders $base)
                         Essential = (Get-EssentialFolders $base)
+                        Aurora    = (Get-AuroraFolders $base)
                         Base      = $base
                     }
                 }
@@ -755,6 +770,13 @@ function Build-JarWhitelist($instanceFolders, [string]$jimagePath, [string]$pref
         Write-Dim "essential  not trusted (no Essential_<ver>_<loader>_<mc>.jar in mods, or no essential folder)"
     }
 
+    $aurResult = Add-JarFoldersToWhitelist $instanceFolders.Aurora $exact $packageSet
+    if ($aurResult.JarCount -gt 0) {
+        Write-Ok "aurora     $($aurResult.JarCount) jar(s), $($aurResult.ClassCount) classes"
+    } else {
+        Write-Dim "aurora     not trusted (no aurora.jar in mods, or no aurora folder)"
+    }
+
     $jdkResult = Add-JdkPlatformClassesToWhitelist $jimagePath $exact $packageSet $preferredModulesImage
     if ($jdkResult.ClassCount -gt 0) {
         $sourceNote = if ($jdkResult.UsedTarget) { "target's own runtime image" } else { "located jimage's runtime image" }
@@ -1057,7 +1079,8 @@ function Find-TrustedPathMatch([string]$path, $resolvedTrustedPaths) {
     $trimmed = $path.TrimEnd('\', '/')
     foreach ($t in $resolvedTrustedPaths) {
         if ($t.IsDir) {
-            if ($trimmed.StartsWith($t.Path, [StringComparison]::OrdinalIgnoreCase)) { return $t.Label }
+            $prefix = $t.Path + [IO.Path]::DirectorySeparatorChar
+            if ($trimmed.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { return $t.Label }
         } else {
             if ($trimmed -ieq $t.Path) { return $t.Label }
         }
@@ -1311,7 +1334,7 @@ if ($ProvenanceMode) {
         }
         $cpEntries = @()
         try { $cpEntries = Get-ClassPathEntries $jcmd $pidNum } catch {}
-        $trustedRaw = @($instanceFolders.Mods) + @($instanceFolders.Libraries) + @($instanceFolders.Versions) + @($instanceFolders.Remapped) + @($instanceFolders.Essential) + @($cpEntries) + @($provenanceAgent.AgentJar)
+        $trustedRaw = @($instanceFolders.Mods) + @($instanceFolders.Libraries) + @($instanceFolders.Versions) + @($instanceFolders.Remapped) + @($instanceFolders.Essential) + @($instanceFolders.Aurora) + @($cpEntries) + @($provenanceAgent.AgentJar)
         $resolvedTrustedPaths = Resolve-TrustedPaths $trustedRaw
         $records = Import-ProvenanceReport $reportPath
         $unknownCount = 0
