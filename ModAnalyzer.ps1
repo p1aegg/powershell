@@ -104,7 +104,7 @@ Clear-Host
 Write-Host ""
 Write-Box @(
     "P 1 A E ' S   M O D   A N A L Y Z E R",
-    "v1.0.0",
+    "v1.0.1",
     "",
     "Dm .p1ae for Questions or Bugs"
 ) 'Cyan' @('Cyan', 'DarkGray', 'White', 'Gray', 'DarkGray')
@@ -276,7 +276,7 @@ using System.Threading.Tasks;
 public class JarResultV2
 {
     public int Classes, OwnClasses, Single1, Two, Numeric, Unicode, Fullwidth, Japanese, NoVowel, Gibberish, Confusion, SinglePkg, ObfPath;
-    public bool Exec, Download, Exfil, Malformed;
+    public bool Exec, Download, Exfil, Malformed, Robot;
     public string ModId = "", Name = "", Version = "", Loader = "", Error = "";
     public List<string> Strings = new List<string>();
     public List<string> FwRuns = new List<string>();
@@ -284,6 +284,7 @@ public class JarResultV2
     public List<string> Obfuscators = new List<string>();
     public List<string> PatternHits = new List<string>();
     public List<string> NestedJars = new List<string>();
+    public List<string> LoaderHits = new List<string>();
     public bool[] ExHit, StHit, ObHit;
 }
 
@@ -395,13 +396,25 @@ public static class P1ScanV2
 
     static readonly string[] FlagNeedles = new string[] {
         "java/lang/Runtime", "getRuntime", "exec", "openConnection", "HttpURLConnection",
-        "FileOutputStream", "setDoOutput", "getOutputStream", "getProperty" };
+        "FileOutputStream", "setDoOutput", "getOutputStream", "getProperty",
+        "defineClass", "java/lang/ClassLoader", "findClass", "addToClassPath", "FabricLauncher",
+        "URLClassLoader", "defineHiddenClass", "org/spongepowered/asm/mixin/Mixins", "addConfiguration",
+        "processedMods", "addURL", "java/awt/Robot" };
 
     static P1AutomatonV2 exAc, stAc, obAc, enAc;
     static volatile bool built = false;
     static readonly object buildLock = new object();
 
     [ThreadStatic] static byte[] tBuf;
+    [ThreadStatic] static string nestPath;
+
+    static void AddLoader(JarResultV2 r, string where, string reason)
+    {
+        if (r.LoaderHits.Count >= 12) { return; }
+        string w = where;
+        if (nestPath != null) { w = nestPath + "!" + where; }
+        AddU(r.LoaderHits, reason + " [" + w + "]");
+    }
 
     public static void SetEntryPatterns(string[] pats)
     {
@@ -510,7 +523,7 @@ public static class P1ScanV2
         return false;
     }
 
-    static void ScanContent(string content, JarResultV2 r)
+    static void ScanContent(string content, JarResultV2 r, string where)
     {
         int[] exNext = exAc.Next; byte[] exCls = exAc.ClassOf; int exStride = exAc.Stride; int[][] exOut = exAc.Outs;
         int[] stNext = stAc.Next; byte[] stCls = stAc.ClassOf; int stStride = stAc.Stride; int[][] stOut = stAc.Outs;
@@ -582,6 +595,18 @@ public static class P1ScanV2
         if ((mask & 0x007) == 0x007) { r.Exec = true; }
         if ((mask & 0x038) == 0x038) { r.Download = true; }
         if ((mask & 0x1C8) == 0x1C8) { r.Exfil = true; }
+        if ((mask & 0x100000) != 0) { r.Robot = true; }
+
+        if (where != null && (mask & 0xFFE00) != 0)
+        {
+            if ((mask & 0x200) != 0 && (mask & 0xC00) != 0) { AddLoader(r, where, "custom ClassLoader defining classes from raw bytes (defineClass) - can run code that is not in the jar's class list"); }
+            if ((mask & 0x8000) != 0 && (mask & 0x400) != 0) { AddLoader(r, where, "defineHiddenClass - defines hidden classes from bytes at runtime"); }
+            if ((mask & 0x1000) != 0 && (mask & 0x2000) != 0) { AddLoader(r, where, "injects a jar into the game classpath (FabricLauncher.addToClassPath)"); }
+            if ((mask & 0x30000) == 0x30000) { AddLoader(r, where, "registers Mixin configs at runtime (Mixins.addConfiguration) - applies patches from code outside the mod list"); }
+            if ((mask & 0x4000) != 0) { AddLoader(r, where, "URLClassLoader - loads external jar code"); }
+            else if ((mask & 0x80000) != 0 && (mask & 0x400) != 0) { AddLoader(r, where, "addURL on a ClassLoader - appends external jars to the classpath"); }
+            if ((mask & 0x40000) != 0) { AddLoader(r, where, "references Fabric's processedMods folder - loads a jar out of the loader's internal cache"); }
+        }
     }
 
     static void Finish(JarResultV2 r)
@@ -714,7 +739,7 @@ public static class P1ScanV2
                     if (e.Length > 0 && e.Length < 6000000)
                     {
                         int len = ReadShared(e);
-                        ScanContent(Encoding.UTF8.GetString(tBuf, 0, len), r);
+                        ScanContent(Encoding.UTF8.GetString(tBuf, 0, len), r, n);
                     }
                 }
                 else if (n.EndsWith(".json") || n.EndsWith("MANIFEST.MF"))
@@ -722,7 +747,7 @@ public static class P1ScanV2
                     if (e.Length > 0 && e.Length < 6000000)
                     {
                         int len = ReadShared(e);
-                        ScanContent(Encoding.UTF8.GetString(tBuf, 0, len), r);
+                        ScanContent(Encoding.UTF8.GetString(tBuf, 0, len), r, null);
                     }
                 }
                 else if (depth < 3 && n.StartsWith("META-INF/") && n.EndsWith(".jar"))
@@ -733,7 +758,10 @@ public static class P1ScanV2
                         using (MemoryStream ms = new MemoryStream(ReadBytes(e)))
                         using (ZipArchive nz = new ZipArchive(ms, ZipArchiveMode.Read))
                         {
-                            ScanArchive(nz, r, depth + 1);
+                            string prevNest = nestPath;
+                            nestPath = n.Substring(n.LastIndexOf('/') + 1);
+                            try { ScanArchive(nz, r, depth + 1); }
+                            finally { nestPath = prevNest; }
                         }
                     }
                 }
@@ -1119,7 +1147,7 @@ function Request-ModsFolder([string]$reason, [string]$giveUp = "Press Enter on a
         if ([System.IO.Path]::GetFileName($dir.TrimEnd('\','/')) -eq "mods") { Write-Ok "Using mods folder: $dir" 4; return $dir }
         $res = Resolve-ModsFolder $dir
         if ($res) { Write-Ok "Using mods folder: $res" 4; return $res }
-        $jarCount = @(Get-ChildItem -LiteralPath $dir -Filter *.jar -ErrorAction SilentlyContinue).Count
+        $jarCount = @(Get-ChildItem -LiteralPath $dir -Filter *.jar -Force -ErrorAction SilentlyContinue).Count
         Write-Warn "No mods folder under that path ($jarCount .jar file(s) directly inside)." 4
         Write-Host "    scan it anyway? [y/N] $gPrompt " -NoNewline -ForegroundColor Cyan
         $c = Read-Host
@@ -1497,10 +1525,6 @@ function Invoke-BulkHashLookup($hashes) {
         }
     } catch { Write-Warn "Bulk hash lookup failed ($($_.Exception.Message)) - continuing with name-based lookups." }
 }
-function Get-Megabase([string]$hash) {
-    try { $r = Invoke-RestMethod -Uri "https://megabase.vercel.app/api/query?hash=$hash" -UseBasicParsing -TimeoutSec 10; if (-not $r.error -and $r.data -and $r.data.name) { return $r.data } } catch {}
-    return $null
-}
 function Find-ModrinthGuess([string]$FileName, [string]$ModId, [string]$LocalVer, [long]$ActualSize, [string]$McVer) {
     $key = "g:$FileName|$ModId|$ActualSize"
     if ($script:GuessCache.ContainsKey($key)) { return $script:GuessCache[$key] }
@@ -1586,8 +1610,8 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
     $mcVer = Get-McVersion $Inst
     if ($mcVer) { Write-Info "Minecraft version: $mcVer (used to pick matching Modrinth releases)" }
 
-    $jars = @(Get-ChildItem -LiteralPath $ModsFolder -Filter *.jar -File -ErrorAction SilentlyContinue)
-    $odd  = @(Get-ChildItem -LiteralPath $ModsFolder -File -ErrorAction SilentlyContinue | Where-Object {
+    $jars = @(Get-ChildItem -LiteralPath $ModsFolder -Filter *.jar -File -Force -ErrorAction SilentlyContinue)
+    $odd  = @(Get-ChildItem -LiteralPath $ModsFolder -File -Force -ErrorAction SilentlyContinue | Where-Object {
                 $_.Extension -ne '.jar' -and $_.Extension -ne '.disabled' -and $_.Length -gt 1KB -and [P1ScanV2]::HasZipMagic($_.FullName) })
     $oddNames = @{}; foreach ($o in $odd) { $oddNames[$o.FullName] = $true }
     $targets = @($jars) + @($odd)
@@ -1612,7 +1636,6 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
     $hashes = @{}
     for ($hi = 0; $hi -lt $targets.Count; $hi++) { $hashes[$targets[$hi].FullName] = $job.Hashes[$hi] }
 
-    Write-Info "Checking Modrinth..."
     Invoke-BulkHashLookup @($hashes.Values)
     Write-Ok "$($script:HashHits.Count) exact-hash match(es) on Modrinth"
 
@@ -1634,30 +1657,21 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
         if ($hash -and $script:HashHits.ContainsKey($hash)) {
             $h = $script:HashHits[$hash]; $vtype = 'Hash'; $modName = $h.Name; $slug = $h.Slug; $url = $h.Url; $expected = $h.Size; $dl = $h.Downloads
         } else {
-            $mb = if ($hash) { Get-Megabase $hash } else { $null }
-            if ($mb) {
-                $vtype = 'Megabase'; $modName = $mb.name
-                $mbSlug = ([string]$mb.name).ToLower() -replace '[^a-z0-9]+','-'
-                $mp = Get-MrProject $mbSlug.Trim('-')
-                if ($mp -and $mp.title -and ([string]$mp.title).ToLower() -eq ([string]$mb.name).ToLower()) { $dl = $mp.downloads }
-            }
-            else {
-                $gs = Find-ModrinthGuess $f.Name $jr.ModId $jr.Version $f.Length $mcVer
-                if ($gs) {
-                    $modName = $gs.Name; $slug = $gs.Slug; $url = $gs.Url
-                    if ($gs.Exact) {
-                        $expected = $gs.Size
-                        if ([math]::Abs($f.Length - $gs.Size) -le 512) { $vtype = 'Name'; $dl = $gs.Downloads }
-                        else {
-                            $d = [math]::Round(($f.Length - $gs.Size) / 1KB, 2)
-                            $sign = if ($d -gt 0) { "+" } else { "" }
-                            $tamper.Add("File differs from the Modrinth release $($gs.Version) of '$($gs.Name)' ($sign$d KB, expected $([math]::Round($gs.Size/1KB,2)) KB) - hash does not match")
-                        }
-                    } else { $hint = "Name resembles Modrinth project '$($gs.Name)' but no matching release/hash was found" }
-                }
+            $gs = Find-ModrinthGuess $f.Name $jr.ModId $jr.Version $f.Length $mcVer
+            if ($gs) {
+                $modName = $gs.Name; $slug = $gs.Slug; $url = $gs.Url
+                if ($gs.Exact) {
+                    $expected = $gs.Size
+                    if ([math]::Abs($f.Length - $gs.Size) -le 512) { $vtype = 'Name'; $dl = $gs.Downloads }
+                    else {
+                        $d = [math]::Round(($f.Length - $gs.Size) / 1KB, 2)
+                        $sign = if ($d -gt 0) { "+" } else { "" }
+                        $tamper.Add("File differs from the Modrinth release $($gs.Version) of '$($gs.Name)' ($sign$d KB, expected $([math]::Round($gs.Size/1KB,2)) KB) - hash does not match")
+                    }
+                } else { $hint = "Name resembles Modrinth project '$($gs.Name)' but no matching release/hash was found" }
             }
         }
-        $exempt = ($vtype -eq 'Hash' -or $vtype -eq 'Megabase')
+        $exempt = ($vtype -eq 'Hash')
 
         $strings = New-Object System.Collections.Generic.List[string]
         foreach ($s in $jr.Strings) { [void]$strings.Add($s) }
@@ -1715,6 +1729,8 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             if ($jr.Exec -and $op2 -ge 25) { $bypass.Add("Runtime.exec() in obfuscated code - can run arbitrary OS commands") }
             if ($jr.Download) { $bypass.Add("HTTP file download - fetches and writes files from a remote server at runtime") }
             if ($jr.Exfil)    { $bypass.Add("HTTP POST exfiltration - sends system data to an external server") }
+            if ($jr.Robot)    { $bypass.Add("Java Robot (java.awt.Robot) - can simulate mouse/keyboard input and capture the screen; used by auto-clickers and input macros") }
+            foreach ($lh in $jr.LoaderHits) { $bypass.Add("Custom class loading - $lh") }
             if ($jr.ModId -and ($knownLegitModIds -contains $jr.ModId) -and $bypass.Count -gt 0) { $bypass.Add("Fake mod identity - claims to be '$($jr.ModId)' but contains dangerous code") }
         }
         if ($jr.Malformed) {
@@ -1722,6 +1738,12 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
         }
         if ($oddNames.ContainsKey($f.FullName)) {
             $bypass.Add("Archive hidden behind a '$($f.Extension)' extension inside the mods folder")
+        }
+        $attrHidden = @()
+        if ($f.Attributes -band [System.IO.FileAttributes]::Hidden) { $attrHidden += 'Hidden' }
+        if ($f.Attributes -band [System.IO.FileAttributes]::System) { $attrHidden += 'System' }
+        if ($attrHidden.Count -gt 0) {
+            $bypass.Add("Hidden file attribute enabled ($($attrHidden -join '+')) - mod is concealed from Explorer and normal directory listings; scanned anyway")
         }
 
         $disallowed = $null
