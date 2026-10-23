@@ -280,6 +280,7 @@ public class JarResultV2
     public string ModId = "", Name = "", Version = "", Loader = "", Error = "";
     public List<string> Strings = new List<string>();
     public List<string> FwRuns = new List<string>();
+    public HashSet<string> FwSeen = new HashSet<string>();
     public List<string> Obfuscators = new List<string>();
     public List<string> PatternHits = new List<string>();
     public List<string> NestedJars = new List<string>();
@@ -429,6 +430,7 @@ public static class P1ScanV2
     }
 
     static void AddU(List<string> l, string s) { if (!l.Contains(s)) { l.Add(s); } }
+    static void AddFw(JarResultV2 r, string s) { if (r.FwSeen.Add(s)) { r.FwRuns.Add(s); } }
 
     public static string Normalize(string text)
     {
@@ -446,6 +448,53 @@ public static class P1ScanV2
             else { if (!boundary) { sb.Append('\n'); boundary = true; } }
         }
         return sb.ToString();
+    }
+
+    public static object[] ResolveFullwidth(string[] runs, string[] strongKeys, string[] strongVals, string[] fwKeys, string[] fwVals)
+    {
+        List<string> resolved = new List<string>();
+        HashSet<string> resolvedSet = new HashSet<string>();
+        HashSet<string> seen = new HashSet<string>();
+        List<string> unkKeys = new List<string>();
+        Dictionary<string, string> unkRuns = new Dictionary<string, string>();
+        foreach (string run in runs)
+        {
+            string norm = Normalize(run).Replace("\n", "");
+            if (norm.Length < 3) { continue; }
+            if (!seen.Add(norm)) { continue; }
+            string hit = null;
+            for (int i = 0; i < strongKeys.Length; i++)
+            {
+                if (norm.IndexOf(strongKeys[i], StringComparison.Ordinal) >= 0) { hit = strongVals[i]; break; }
+            }
+            if (hit == null)
+            {
+                for (int i = 0; i < fwKeys.Length; i++)
+                {
+                    if (norm.IndexOf(fwKeys[i], StringComparison.Ordinal) >= 0) { hit = fwVals[i]; break; }
+                }
+            }
+            if (hit != null)
+            {
+                string label = hit + " (fullwidth)";
+                if (resolvedSet.Add(label)) { resolved.Add(label); }
+                continue;
+            }
+            if (norm.Length >= 6) { unkKeys.Add(norm); unkRuns[norm] = run; }
+        }
+        unkKeys.Sort(delegate(string a, string b) { return b.Length.CompareTo(a.Length); });
+        List<string> kept = new List<string>();
+        List<string> final = new List<string>();
+        foreach (string k in unkKeys)
+        {
+            bool redundant = false;
+            for (int i = 0; i < kept.Count; i++)
+            {
+                if (kept[i].Length > k.Length && kept[i].IndexOf(k, StringComparison.Ordinal) >= 0) { redundant = true; break; }
+            }
+            if (!redundant) { kept.Add(k); final.Add(unkRuns[k]); }
+        }
+        return new object[] { resolved.ToArray(), final.ToArray() };
     }
 
     static bool EntryMayMatch(string n)
@@ -524,11 +573,11 @@ public static class P1ScanV2
             }
             else
             {
-                if (runStart >= 0 && fwCount >= 2) { AddU(r.FwRuns, content.Substring(runStart, runEnd - runStart + 1)); }
+                if (runStart >= 0 && fwCount >= 2) { AddFw(r, content.Substring(runStart, runEnd - runStart + 1)); }
                 runStart = -1; runEnd = -1; fwCount = 0;
             }
         }
-        if (runStart >= 0 && fwCount >= 2) { AddU(r.FwRuns, content.Substring(runStart, runEnd - runStart + 1)); }
+        if (runStart >= 0 && fwCount >= 2) { AddFw(r, content.Substring(runStart, runEnd - runStart + 1)); }
 
         if ((mask & 0x007) == 0x007) { r.Exec = true; }
         if ((mask & 0x038) == 0x038) { r.Download = true; }
@@ -969,6 +1018,10 @@ foreach ($s in ($fwLabels + $cheatStrings)) {
     if ($k.Length -ge 5 -and -not $fwMap.ContainsKey($k) -and -not $strongMap.ContainsKey($k)) { $fwMap[$k] = $s }
 }
 $fwKeys = @($fwMap.Keys | Sort-Object -Property Length -Descending)
+$script:StrongKeyArr = [string[]]$strongKeys
+$script:StrongValArr = [string[]]@($strongKeys | ForEach-Object { $strongMap[$_] })
+$script:FwKeyArr = [string[]]$fwKeys
+$script:FwValArr = [string[]]@($fwKeys | ForEach-Object { $fwMap[$_] })
 
 [P1ScanV2]::ExactNeedles = [string[]]@($exactSet)
 [P1ScanV2]::StrongKeys   = [string[]]$strongKeys
@@ -1516,25 +1569,8 @@ function Get-ZoneInfo([string]$p) {
     return $r
 }
 function Resolve-Fullwidth($runs) {
-    $resolved = New-Object System.Collections.Generic.HashSet[string]
-    $unknown = @{}
-    foreach ($run in $runs) {
-        $norm = ([P1ScanV2]::Normalize($run)) -replace "`n", ''
-        if ($norm.Length -lt 3) { continue }
-        $hit = $null
-        foreach ($k in $strongKeys) { if ($norm.Contains($k)) { $hit = $strongMap[$k]; break } }
-        if (-not $hit) { foreach ($k in $fwKeys) { if ($norm.Contains($k)) { $hit = $fwMap[$k]; break } } }
-        if ($hit) { [void]$resolved.Add("$hit (fullwidth)"); continue }
-        if ($norm.Length -ge 6 -and -not $unknown.ContainsKey($norm)) { $unknown[$norm] = $run }
-    }
-    $final = New-Object System.Collections.Generic.List[string]
-    $keys = @($unknown.Keys)
-    foreach ($k in $keys) {
-        $redundant = $false
-        foreach ($o in $keys) { if ($k.Length -lt $o.Length -and $o.Contains($k)) { $redundant = $true; break } }
-        if (-not $redundant) { $final.Add($unknown[$k]) }
-    }
-    return @{ Resolved = @($resolved); Unknown = @($final) }
+    $r = [P1ScanV2]::ResolveFullwidth([string[]]@($runs), $script:StrongKeyArr, $script:StrongValArr, $script:FwKeyArr, $script:FwValArr)
+    return @{ Resolved = @($r[0]); Unknown = @($r[1]) }
 }
 function Get-McVersion($Inst) {
     if ($Inst -and $Inst.CommandLine) {
