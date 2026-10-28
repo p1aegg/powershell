@@ -144,7 +144,7 @@ Clear-Host
 Write-Host ""
 Write-Box @(
     "P 1 A E ' S   M O D   A N A L Y Z E R",
-    "v1.0.2",
+    "v1.0.3",
     "",
     "Dm .p1ae for Questions or Bugs"
 ) 'Cyan' @('Cyan', 'DarkGray', 'White', 'Gray', 'DarkGray')
@@ -313,10 +313,13 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class JarResultV2
+public class JarResultV4
 {
     public int Classes, OwnClasses, Single1, Two, Numeric, Unicode, Fullwidth, Japanese, NoVowel, Gibberish, Confusion, SinglePkg, ObfPath, HashNames, HashPkg, UpperPkg;
-    public bool Exec, Download, Exfil, Malformed, Robot;
+    public string UpperPkgEx;
+    public List<string> KnownLibs = new List<string>();
+    public List<string> KnownNested = new List<string>();
+    public bool Exec, Download, DownloadAsset, Exfil, Malformed, Robot;
     public string ModId = "", Name = "", Version = "", Loader = "", Error = "";
     public List<string> Strings = new List<string>();
     public List<string> FwRuns = new List<string>();
@@ -341,24 +344,25 @@ public class JarResultV2
     public bool[] ExHit, StHit, ObHit;
 }
 
-public class ScanJobV2
+public class ScanJobV4
 {
-    public JarResultV2[] Results;
+    public JarResultV4[] Results;
     public string[] Hashes;
+    public string[] Sha256;
     public string[] Errors;
     public int Done;
     public int Total;
     public Task Task;
 }
 
-public sealed class P1AutomatonV2
+public sealed class P1AutomatonV4
 {
     public int[] Next;
     public int[][] Outs;
     public byte[] ClassOf;
     public int Stride;
 
-    public P1AutomatonV2(string[] patterns, bool fold)
+    public P1AutomatonV4(string[] patterns, bool fold)
     {
         ClassOf = new byte[65536];
         int classes = 0;
@@ -437,13 +441,22 @@ public sealed class P1AutomatonV2
     }
 }
 
-public static class P1ScanV2
+public static class P1ScanV4
 {
     public static string[] ExactNeedles = new string[0];
     public static string[] StrongKeys = new string[0];
     public static string[] StrongNames = new string[0];
     public static string[] ObfNeedles = new string[0];
+    public const string BuildId = "2026-10-26.4";
     public static string[] ObfNames = new string[0];
+    public static Dictionary<string, string> KnownSafeNested = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public static Dictionary<string, string> KnownSafeNative = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    static readonly string[][] CheatStrPathExempt = new string[][] {
+        new string[] { "invokeOnMouseButton", "net/fabricmc/fabric/", "/gametest/" }
+    };
+    public static string[] NativeNeedles = new string[0];
+    public static string[] NativeNames = new string[0];
+    public static string[] NativeKinds = new string[0];
     public static string[] EntryPatterns = new string[0];
     public static Regex EntryRegex = null;
 
@@ -454,7 +467,7 @@ public static class P1ScanV2
         "URLClassLoader", "defineHiddenClass", "org/spongepowered/asm/mixin/Mixins", "addConfiguration",
         "processedMods", "addURL", "java/awt/Robot" };
 
-    static P1AutomatonV2 exAc, stAc, obAc, enAc, xAc;
+    static P1AutomatonV4 exAc, stAc, obAc, enAc, xAc, nvAc;
 
     static readonly string[] XN = new string[] {
         "MethodHandles$Lookup", "sun/misc/Unsafe", "jdk/internal/misc/Unsafe",
@@ -469,14 +482,14 @@ public static class P1ScanV2
         "deleteOnExit", "getCodeSource",
         "getModContainer", "getAllMods", "getRootPaths", "findPath", "readAllBytes",
         "KnotClassLoader", "FabricLauncherBase", "net/fabricmc/loader/impl/",
-        "UEsDBBQ", "UEsDBAo", "yv66vg" };
+        "UEsDBBQ", "UEsDBAo", "yv66vg", "classfile/ClassFileWriter" };
     static volatile bool built = false;
     static readonly object buildLock = new object();
 
     [ThreadStatic] static byte[] tBuf;
     [ThreadStatic] static string nestPath;
 
-    static void AddLoader(JarResultV2 r, string where, string reason)
+    static void AddLoader(JarResultV4 r, string where, string reason)
     {
         if (r.LoaderHits.Count >= 12) { return; }
         string w = where;
@@ -494,12 +507,12 @@ public static class P1ScanV2
     {
         return nestPath != null && nestPath.StartsWith("mixinextras") && where.StartsWith("com/llamalad7/mixinextras/");
     }
-    static void DeferHit(JarResultV2 r, string list, string where, string msg)
+    static void DeferHit(JarResultV4 r, string list, string where, string msg)
     {
         if (TrustedNest(where)) { return; }
         r.Defer.Add(new string[] { list, DirKey(where), msg });
     }
-    static void DeferLoader(JarResultV2 r, string where, string reason)
+    static void DeferLoader(JarResultV4 r, string where, string reason)
     {
         string w = where;
         if (nestPath != null) { w = nestPath + "!" + where; }
@@ -521,20 +534,21 @@ public static class P1ScanV2
         lock (buildLock)
         {
             if (built) { return; }
-            exAc = new P1AutomatonV2(ExactNeedles, true);
-            stAc = new P1AutomatonV2(StrongKeys, false);
+            exAc = new P1AutomatonV4(ExactNeedles, true);
+            stAc = new P1AutomatonV4(StrongKeys, false);
             string[] ob = new string[ObfNeedles.Length + FlagNeedles.Length];
             Array.Copy(ObfNeedles, 0, ob, 0, ObfNeedles.Length);
             Array.Copy(FlagNeedles, 0, ob, ObfNeedles.Length, FlagNeedles.Length);
-            obAc = new P1AutomatonV2(ob, false);
-            enAc = new P1AutomatonV2(EntryPatterns, false);
-            xAc = new P1AutomatonV2(XN, false);
+            obAc = new P1AutomatonV4(ob, false);
+            enAc = new P1AutomatonV4(EntryPatterns, false);
+            xAc = new P1AutomatonV4(XN, false);
+            nvAc = new P1AutomatonV4(NativeNeedles, true);
             built = true;
         }
     }
 
     static void AddU(List<string> l, string s) { if (!l.Contains(s)) { l.Add(s); } }
-    static void AddFw(JarResultV2 r, string s) { if (r.FwSeen.Add(s)) { r.FwRuns.Add(s); } }
+    static void AddFw(JarResultV4 r, string s) { if (r.FwSeen.Add(s)) { r.FwRuns.Add(s); } }
 
     public static string Normalize(string text)
     {
@@ -603,7 +617,7 @@ public static class P1ScanV2
 
     static bool EntryMayMatch(string n)
     {
-        P1AutomatonV2 a = enAc;
+        P1AutomatonV4 a = enAc;
         int[] nx = a.Next; byte[] cl = a.ClassOf; int st = a.Stride; int[][] outs = a.Outs;
         int s = 0;
         for (int i = 0; i < n.Length; i++)
@@ -614,7 +628,7 @@ public static class P1ScanV2
         return false;
     }
 
-    static void ScanContent(string content, JarResultV2 r, string where)
+    static void ScanContent(string content, JarResultV4 r, string where)
     {
         int[] exNext = exAc.Next; byte[] exCls = exAc.ClassOf; int exStride = exAc.Stride; int[][] exOut = exAc.Outs;
         int[] stNext = stAc.Next; byte[] stCls = stAc.ClassOf; int stStride = stAc.Stride; int[][] stOut = stAc.Outs;
@@ -623,6 +637,9 @@ public static class P1ScanV2
         long xmask = 0; int xs = 0;
         bool[] exHit = r.ExHit; bool[] stHit = r.StHit; bool[] obHit = r.ObHit;
         int obCount = ObfNeedles.Length;
+        int[] exemptIdx = CheatExemptFor(where);
+        bool[] exemptPrev = null;
+        if (exemptIdx != null) { exemptPrev = new bool[exemptIdx.Length]; for (int k = 0; k < exemptIdx.Length; k++) { exemptPrev[k] = exHit[exemptIdx[k]]; } }
         int mask = 0;
         int es = 0, ss = 0, os = 0;
         int runStart = -1, runEnd = -1, fwCount = 0;
@@ -636,7 +653,14 @@ public static class P1ScanV2
 
             es = exNext[es * exStride + exCls[raw]];
             o = exOut[es];
-            if (o != null) { for (int k = 0; k < o.Length; k++) { exHit[o[k]] = true; } }
+            if (o != null)
+            {
+                for (int k = 0; k < o.Length; k++)
+                {
+                    if (ExactNeedles[o[k]].Length <= 4 && InBase64Run(content, i)) { continue; }
+                    exHit[o[k]] = true;
+                }
+            }
 
             os = obNext[os * obStride + obCls[raw]];
             o = obOut[os];
@@ -688,12 +712,16 @@ public static class P1ScanV2
             }
         }
         if (runStart >= 0 && fwCount >= 2) { AddFw(r, content.Substring(runStart, runEnd - runStart + 1)); }
+        if (exemptIdx != null) { for (int k = 0; k < exemptIdx.Length; k++) { exHit[exemptIdx[k]] = exemptPrev[k]; } }
 
         if ((mask & 0x007) == 0x007) { r.Exec = true; }
-        if ((mask & 0x038) == 0x038) { r.Download = true; }
+        if ((mask & 0x038) == 0x038)
+        {
+            if (where == null || RunnablePayload(content)) { r.Download = true; } else { r.DownloadAsset = true; }
+        }
         if ((mask & 0x1C8) == 0x1C8) { r.Exfil = true; }
         if ((mask & 0x100000) != 0) { r.Robot = true; }
-        if (where != null && xmask != 0) { ApplyExtra(r, where, xmask, mask); }
+        if (where != null && xmask != 0) { ApplyExtra(r, where, xmask, mask, content); }
 
         if (where != null && (mask & 0xFFE00) != 0)
         {
@@ -707,12 +735,62 @@ public static class P1ScanV2
         }
     }
 
+    static bool IsB64(char c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/' || c == '='; }
+    static bool InBase64Run(string content, int end)
+    {
+        int l = end, r = end;
+        while (l > 0 && IsB64(content[l - 1])) { l--; }
+        while (r + 1 < content.Length && IsB64(content[r + 1])) { r++; }
+        return r - l + 1 >= 40;
+    }
+
+    static int[] CheatExemptFor(string where)
+    {
+        if (where == null) { return null; }
+        List<int> idx = null;
+        foreach (string[] ex in CheatStrPathExempt)
+        {
+            if (!where.StartsWith(ex[1], StringComparison.Ordinal) || where.IndexOf(ex[2], StringComparison.Ordinal) < 0) { continue; }
+            for (int i = 0; i < ExactNeedles.Length; i++)
+            {
+                if (string.Equals(ExactNeedles[i], ex[0], StringComparison.OrdinalIgnoreCase)) { if (idx == null) { idx = new List<int>(); } idx.Add(i); }
+            }
+        }
+        return idx == null ? null : idx.ToArray();
+    }
+
+    static readonly string[] RunnableMarkers = new string[] {
+        ".jar", ".dll", ".exe", ".dylib", ".class",
+        "defineClass", "URLClassLoader", "loadLibrary", "java/lang/ProcessBuilder", "java/lang/Runtime", "java/lang/foreign/Linker", "addToClassPath" };
+    static bool RunnablePayload(string content)
+    {
+        foreach (string m in RunnableMarkers) { if (content.IndexOf(m, StringComparison.Ordinal) >= 0) { return true; } }
+        return false;
+    }
+
+    static string KnownProcessLib(string where, string content)
+    {
+        if (content == null) { return null; }
+        string[] bad = new string[] { "-jar", "http://", "https://", "openConnection", "URLClassLoader", "defineClass", "mshta", "certutil", "wscript" };
+        foreach (string b in bad) { if (content.IndexOf(b, StringComparison.Ordinal) >= 0) { return null; } }
+        if (where.EndsWith("/dirs/Util.class", StringComparison.Ordinal) && content.IndexOf("SHGetKnownFolderPath", StringComparison.Ordinal) >= 0
+            && content.IndexOf("cmd.exe", StringComparison.Ordinal) < 0 && content.IndexOf("javaw", StringComparison.Ordinal) < 0)
+        { return "directories-jvm (dirs-dev) - asks PowerShell for Windows known-folder paths"; }
+        if (where.EndsWith("/util/OSInfo.class", StringComparison.Ordinal) && content.IndexOf("uname -m", StringComparison.Ordinal) >= 0
+            && content.IndexOf("powershell", StringComparison.OrdinalIgnoreCase) < 0 && content.IndexOf("cmd.exe", StringComparison.Ordinal) < 0 && content.IndexOf("javaw", StringComparison.Ordinal) < 0)
+        { return "sqlite-jdbc OSInfo - runs 'uname -m' to choose the right native library"; }
+        if (where == "me/shedaniel/errornotifier/ForkingUtils.class" && nestPath != null && nestPath.StartsWith("error-notifier", StringComparison.Ordinal)
+            && content.IndexOf("cmd.exe", StringComparison.Ordinal) < 0 && content.IndexOf("powershell", StringComparison.OrdinalIgnoreCase) < 0 && content.IndexOf("/bin/sh", StringComparison.Ordinal) < 0)
+        { return "shedaniel error-notifier - relaunches the game's own Java runtime to show an error window"; }
+        return null;
+    }
+
     static string Loc(string where)
     {
         if (where == null) { return ""; }
         return nestPath != null ? nestPath + "!" + where : where;
     }
-    static void AddKinded(JarResultV2 r, List<string> list, string tag, string msg)
+    static void AddKinded(JarResultV4 r, List<string> list, string tag, string msg)
     {
         int ix = msg.LastIndexOf(" [");
         string kind = (ix > 0 && msg.EndsWith("]")) ? msg.Substring(0, ix) : msg;
@@ -723,9 +801,9 @@ public static class P1ScanV2
         r.KindIdx[key] = list.Count - 1;
         r.KindN[key] = 1;
     }
-    static void AddInject(JarResultV2 r, string msg) { AddKinded(r, r.InjectHits, "I", msg); }
-    static void AddSoft(JarResultV2 r, string msg) { AddKinded(r, r.SoftHits, "S", msg); }
-    static void AddPend(JarResultV2 r, string kind, string path, string group, string show)
+    static void AddInject(JarResultV4 r, string msg) { AddKinded(r, r.InjectHits, "I", msg); }
+    static void AddSoft(JarResultV4 r, string msg) { AddKinded(r, r.SoftHits, "S", msg); }
+    static void AddPend(JarResultV4 r, string kind, string path, string group, string show)
     {
         if (r.Pend.Count >= 3000) { return; }
         r.Pend.Add(new string[] { kind, path, group, show });
@@ -736,13 +814,13 @@ public static class P1ScanV2
         return i >= 0 && (m & (1L << i)) != 0;
     }
 
-    static void ApplyExtra(JarResultV2 r, string where, long xm, int mask)
+    static void ApplyExtra(JarResultV4 r, string where, long xm, int mask, string content)
     {
         string w = " [" + Loc(where) + "]";
         bool defCls = (mask & 0x200) != 0;
         bool lookup = XH(xm, "MethodHandles$Lookup");
         bool unsafeU = XH(xm, "sun/misc/Unsafe") || XH(xm, "jdk/internal/misc/Unsafe");
-        bool gen = XH(xm, "org/objectweb/asm/ClassWriter") || XH(xm, "net/bytebuddy") || XH(xm, "javassist/") || XH(xm, "net/sf/cglib");
+        bool gen = XH(xm, "org/objectweb/asm/ClassWriter") || XH(xm, "net/bytebuddy") || XH(xm, "javassist/") || XH(xm, "net/sf/cglib") || XH(xm, "classfile/ClassFileWriter");
         if (gen) { r.GenPkgs.Add(DirKey(where)); }
         if (defCls && lookup && (mask & 0x400) == 0) { DeferHit(r, "I", where, "Lookup.defineClass - defines classes from raw bytes without a ClassLoader subclass" + w); }
         if (defCls && unsafeU) { DeferHit(r, "I", where, "Unsafe.defineClass - defines classes through sun.misc.Unsafe" + w); }
@@ -752,7 +830,12 @@ public static class P1ScanV2
         if (!kotlinAgent && XH(xm, "java/lang/instrument/Instrumentation") && (XH(xm, "addTransformer") || XH(xm, "redefineClasses") || XH(xm, "retransformClasses")))
         { AddInject(r, "Uses java.lang.instrument to transform/redefine loaded classes" + w); }
         bool shell = XH(xm, "cmd.exe") || XH(xm, "powershell") || XH(xm, "/bin/sh") || XH(xm, "javaw") || XH(xm, "mshta") || XH(xm, "certutil") || XH(xm, "wscript");
-        if (shell && (XH(xm, "java/lang/ProcessBuilder") || (mask & 0x7) == 0x7)) { AddInject(r, "Spawns a shell/interpreter (ProcessBuilder/Runtime.exec with cmd, powershell or sh)" + w); }
+        if (shell && (XH(xm, "java/lang/ProcessBuilder") || (mask & 0x7) == 0x7))
+        {
+            string lib = KnownProcessLib(where, content);
+            if (lib != null) { AddSoft(r, "Starts a helper process via a known library: " + lib + w); }
+            else { AddInject(r, "Spawns a shell/interpreter (ProcessBuilder/Runtime.exec with cmd, powershell or sh)" + w); }
+        }
         bool fetch = XH(xm, "java/net/http/HttpClient") || XH(xm, "openStream") || (mask & 0x18) == 0x18;
         bool write = (mask & 0x20) != 0 || XH(xm, "java/nio/file/Files");
         bool dropPath = (XH(xm, "java.io.tmpdir") || XH(xm, "APPDATA") || XH(xm, "user.home")) && XH(xm, ".jar");
@@ -800,7 +883,7 @@ public static class P1ScanV2
         catch (Exception) { return null; }
     }
 
-    static void CheckManifest(string text, JarResultV2 r)
+    static void CheckManifest(string text, JarResultV4 r)
     {
         string t = text.Replace("\r\n ", "").Replace("\n ", "");
         foreach (string line in t.Split('\n'))
@@ -862,6 +945,7 @@ public static class P1ScanV2
     static readonly Regex ZkmRx = new Regex("ZKM\\d+\\.\\d+\\.\\d+[A-Z]?");
     static readonly Regex AidsDescRx = new Regex("\\([ICS]{2,3}\\)Ljava/lang/String;");
     static readonly Regex EpTypeRx = new Regex("\"(main|client|server)\"\\s*:\\s*\\[(.*?)\\]", RegexOptions.Singleline);
+    static readonly Regex EpAnyRx = new Regex("\"([^\"]+)\"\\s*:\\s*\\[(.*?)\\]", RegexOptions.Singleline);
 
     static string Utf8At(byte[] b, int[] off, int idx)
     {
@@ -872,7 +956,7 @@ public static class P1ScanV2
         return Encoding.UTF8.GetString(b, q + 3, l);
     }
 
-    static void SourceFileStats(byte[] b, int len, JarResultV2 r)
+    static void SourceFileStats(byte[] b, int len, JarResultV4 r)
     {
         try
         {
@@ -939,7 +1023,7 @@ public static class P1ScanV2
         catch (Exception) { }
     }
 
-    static void ReadFabricHooks(string text, JarResultV2 r)
+    static void ReadFabricHooks(string text, JarResultV4 r)
     {
         string ep = JsonBlock(text, "entrypoints");
         if (ep != null)
@@ -955,10 +1039,16 @@ public static class P1ScanV2
                 }
                 if (roots.Count >= 2) { AddSoft(r, "Entrypoints of type '" + tm.Groups[1].Value + "' span unrelated namespaces (" + string.Join(", ", roots.ToArray()) + ") - a second package bolted onto the mod"); }
             }
-            foreach (Match m in ClsRx.Matches(ep))
+            foreach (Match km in EpAnyRx.Matches(ep))
             {
-                string cls = m.Groups[1].Value;
-                AddPend(r, "c", cls.Replace('.', '/') + ".class", "entrypoint class(es)", cls);
+                string type = km.Groups[1].Value;
+                bool core = type == "main" || type == "client" || type == "server" || type == "preLaunch";
+                string grp = core ? "entrypoint class(es)" : "optional '" + type + "' entrypoint class(es)";
+                foreach (Match m in ClsRx.Matches("[" + km.Groups[2].Value + "]"))
+                {
+                    string cls = m.Groups[1].Value;
+                    AddPend(r, "c", cls.Replace('.', '/') + ".class", grp, cls);
+                }
             }
         }
         string la = JsonBlock(text, "languageAdapters");
@@ -979,7 +1069,7 @@ public static class P1ScanV2
         if (aw.Success) { AddPend(r, "f", aw.Groups[1].Value, "access widener file(s)", aw.Groups[1].Value); }
     }
 
-    static void ReadMixinCfg(string n, string text, JarResultV2 r)
+    static void ReadMixinCfg(string n, string text, JarResultV4 r)
     {
         Match pm = Regex.Match(text, "\"package\"\\s*:\\s*\"([^\"]+)\"");
         if (!pm.Success) { return; }
@@ -1003,7 +1093,7 @@ public static class P1ScanV2
         }
     }
 
-    static void ReadService(string n, string text, JarResultV2 r)
+    static void ReadService(string n, string text, JarResultV4 r)
     {
         string iface = n.Substring("META-INF/services/".Length);
         if (LoaderSvcRx.IsMatch(iface)) { AddSoft(r, "Registers a loader/transformer service (" + iface + ") - hooks the game's class loading"); }
@@ -1018,10 +1108,24 @@ public static class P1ScanV2
         }
     }
 
-    static void ScanNested(ZipArchiveEntry e, string n, JarResultV2 r, int depth)
+    static bool IsKnownSafeNested(byte[] bytes, string n, JarResultV4 r)
+    {
+        if (KnownSafeNested.Count == 0) { return false; }
+        string hex;
+        using (SHA256 sha = SHA256.Create()) { hex = BitConverter.ToString(sha.ComputeHash(bytes)).Replace("-", ""); }
+        string label;
+        if (!KnownSafeNested.TryGetValue(hex, out label)) { return false; }
+        AddU(r.KnownLibs, label);
+        AddU(r.KnownNested, n.Substring(n.LastIndexOf('/') + 1));
+        return true;
+    }
+
+    static void ScanNested(ZipArchiveEntry e, string n, JarResultV4 r, int depth)
     {
         if (e.Length <= 0 || e.Length >= 150000000) { return; }
-        using (MemoryStream ms = new MemoryStream(ReadBytes(e)))
+        byte[] nb = ReadBytes(e);
+        if (IsKnownSafeNested(nb, n, r)) { return; }
+        using (MemoryStream ms = new MemoryStream(nb))
         using (ZipArchive nz = new ZipArchive(ms, ZipArchiveMode.Read))
         {
             string prevNest = nestPath;
@@ -1031,7 +1135,85 @@ public static class P1ScanV2
         }
     }
 
-    static void CheckBlob(ZipArchiveEntry e, string n, JarResultV2 r, int depth)
+    static readonly HashSet<string> StdPeSections = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+        ".text", ".rdata", ".data", ".pdata", ".xdata", ".reloc", ".rsrc", ".idata", ".edata", ".tls", ".bss",
+        ".didat", ".gfids", ".fptable", ".crt", ".00cfg", ".retplne", ".detourc", ".detourd", ".textbss" };
+
+    static double Entropy(byte[] b, int off, int len)
+    {
+        int[] c = new int[256];
+        for (int i = off; i < off + len; i++) { c[b[i]]++; }
+        double h = 0;
+        for (int i = 0; i < 256; i++)
+        {
+            if (c[i] == 0) { continue; }
+            double p = (double)c[i] / len;
+            h -= p * Math.Log(p, 2);
+        }
+        return h;
+    }
+
+    static void CheckPe(byte[] b, JarResultV4 r, string w)
+    {
+        if (b.Length < 0x100 || b[0] != 0x4D || b[1] != 0x5A) { return; }
+        int pe = BitConverter.ToInt32(b, 0x3C);
+        if (pe < 0 || pe > b.Length - 24 || b[pe] != 0x50 || b[pe + 1] != 0x45) { return; }
+        int nsec = BitConverter.ToUInt16(b, pe + 6);
+        int opt = BitConverter.ToUInt16(b, pe + 20);
+        long sec = (long)pe + 24 + opt;
+        for (int i = 0; i < nsec && sec + 40 <= b.Length; i++, sec += 40)
+        {
+            int s = (int)sec;
+            string nm = Encoding.ASCII.GetString(b, s, 8).TrimEnd('\0');
+            long rawSize = BitConverter.ToUInt32(b, s + 16);
+            long rawPtr = BitConverter.ToUInt32(b, s + 20);
+            if (rawSize < 262144 || rawPtr + rawSize > b.Length) { continue; }
+            if (StdPeSections.Contains(nm)) { continue; }
+            double h = Entropy(b, (int)rawPtr, (int)rawSize);
+            if (h >= 7.5)
+            {
+                if (nm.StartsWith("UPX", StringComparison.Ordinal))
+                { AddInject(r, "UPX-packed native library (section '" + nm + "', " + (rawSize / 1024) + " KB) - compressed, so its contents are hidden from the native signature scan" + w); }
+                else
+                { AddInject(r, "Native library with a large high-entropy section '" + nm + "' (" + (rawSize / 1024) + " KB, entropy " + h.ToString("0.00") + ") - packed or encrypted payload" + w); }
+            }
+        }
+    }
+
+    static void ScanNative(ZipArchiveEntry e, string n, JarResultV4 r)
+    {
+        if (e.Length < 1024 || e.Length >= 64000000) { return; }
+        string w = " [" + Loc(n) + "]";
+        byte[] b = ReadBytes(e);
+        if (KnownSafeNative.Count > 0)
+        {
+            string hex;
+            using (SHA256 sha = SHA256.Create()) { hex = BitConverter.ToString(sha.ComputeHash(b)).Replace("-", ""); }
+            string label;
+            if (KnownSafeNative.TryGetValue(hex, out label)) { AddU(r.KnownLibs, label); return; }
+        }
+        CheckPe(b, r, w);
+        if (nvAc == null || NativeNeedles.Length == 0) { return; }
+        int[] nx = nvAc.Next; byte[] cl = nvAc.ClassOf; int st = nvAc.Stride; int[][] outs = nvAc.Outs;
+        bool[] seen = new bool[NativeNeedles.Length];
+        int s = 0;
+        for (int i = 0; i < b.Length; i++)
+        {
+            s = nx[s * st + cl[b[i]]];
+            int[] o = outs[s];
+            if (o != null) { for (int k = 0; k < o.Length; k++) { seen[o[k]] = true; } }
+        }
+        for (int i = 0; i < seen.Length; i++)
+        {
+            if (!seen[i]) { continue; }
+            string kind = NativeKinds[i];
+            if (kind == "Obf") { AddU(r.Obfuscators, NativeNames[i]); }
+            else if (kind == "Inject") { AddInject(r, NativeNames[i] + w); }
+            else { AddU(r.Strings, NativeNames[i]); }
+        }
+    }
+
+    static void CheckBlob(ZipArchiveEntry e, string n, JarResultV4 r, int depth)
     {
         string lo = n.ToLowerInvariant();
         string w = " [" + Loc(n) + "]";
@@ -1042,7 +1224,10 @@ public static class P1ScanV2
         if (ext == ".exe" || ext == ".bat" || ext == ".cmd" || ext == ".ps1" || ext == ".vbs" || ext == ".msi" || ext == ".scr")
         { AddInject(r, "Executable/script file bundled inside the jar (" + ext + ")" + w); return; }
         if (ext == ".dll" || ext == ".so" || ext == ".dylib" || ext == ".jnilib" || ext == ".sh")
-        { AddSoft(r, "Bundles a native library/script (" + ext + ")" + w); }
+        {
+            AddSoft(r, "Bundles a native library/script (" + ext + ")" + w);
+            if (ext != ".sh") { try { ScanNative(e, n, r); } catch (Exception) { } }
+        }
         if (ext == ".jar")
         {
             AddInject(r, "Jar stored outside META-INF/jars - a loader can read it at runtime" + w);
@@ -1050,14 +1235,17 @@ public static class P1ScanV2
             return;
         }
         if (e.Length < 8) { return; }
-        byte[] hd = new byte[4]; int got = 0;
+        byte[] hd = new byte[8]; int got = 0;
         using (Stream s = e.Open())
         {
-            while (got < 4) { int k = s.Read(hd, got, 4 - got); if (k <= 0) { break; } got += k; }
+            while (got < 8) { int k = s.Read(hd, got, 8 - got); if (k <= 0) { break; } got += k; }
         }
         if (got < 4) { return; }
         bool pk = hd[0] == 0x50 && hd[1] == 0x4B && hd[2] == 0x03 && hd[3] == 0x04;
-        bool cf = hd[0] == 0xCA && hd[1] == 0xFE && hd[2] == 0xBA && hd[3] == 0xBE;
+        bool magic = hd[0] == 0xCA && hd[1] == 0xFE && hd[2] == 0xBA && hd[3] == 0xBE;
+        int major = got >= 8 ? ((hd[6] << 8) | hd[7]) : 45;
+        bool cf = magic && major >= 45;
+        bool fat = magic && got >= 8 && major < 45 && hd[4] == 0 && hd[5] == 0;
         bool elf = hd[0] == 0x7F && hd[1] == 0x45 && hd[2] == 0x4C && hd[3] == 0x46;
         if (pk && ext != ".zip")
         {
@@ -1067,6 +1255,7 @@ public static class P1ScanV2
         }
         if (cf && ext == ".bin" && n == "DebugProbesKt.bin" && nestPath != null && nestPath.StartsWith("kotlinx-coroutines-core")) { return; }
         if (cf && ext != ".dylib" && ext != ".jnilib") { AddInject(r, "Java class file disguised as '" + (ext.Length > 0 ? ext : "no extension") + "'" + w); return; }
+        if (fat && ext != ".so" && ext != ".dylib" && ext != ".jnilib") { AddInject(r, "Native binary (Mach-O universal) disguised as '" + (ext.Length > 0 ? ext : "no extension") + "'" + w); return; }
         if (elf && ext != ".so") { AddInject(r, "Native binary (ELF) disguised as '" + (ext.Length > 0 ? ext : "no extension") + "'" + w); return; }
         if ((ext == ".bin" || ext == ".dat") && e.Length >= 8192)
         {
@@ -1076,7 +1265,7 @@ public static class P1ScanV2
         }
     }
 
-    static void ResolvePending(JarResultV2 r)
+    static void ResolvePending(JarResultV4 r)
     {
         if (r.Malformed || r.Pend.Count == 0) { return; }
         Dictionary<string, int> tot = new Dictionary<string, int>();
@@ -1101,7 +1290,8 @@ public static class P1ScanV2
             int m;
             if (!miss.TryGetValue(g, out m) || m == 0) { continue; }
             string dmsg = "Dangling reference - " + m + " of " + tot[g] + " declared " + g + " not found in the archive (e.g. " + ex[g] + ") - that code/data must come from outside this jar";
-            if (g.StartsWith("mixin class(es)") || g.StartsWith("mixin plugin"))
+            bool softSvc = g.StartsWith("service provider(s) for ") && !LoaderSvcRx.IsMatch(g.Substring("service provider(s) for ".Length));
+            if (g.StartsWith("mixin class(es)") || g.StartsWith("mixin plugin") || g.StartsWith("optional '") || softSvc)
             {
                 if (r.SoftHits.Count < 25) { r.SoftHits.Add(dmsg); }
                 continue;
@@ -1111,7 +1301,7 @@ public static class P1ScanV2
         }
     }
 
-    static void Finish(JarResultV2 r)
+    static void Finish(JarResultV4 r)
     {
         for (int i = 0; i < ExactNeedles.Length; i++) { if (r.ExHit[i]) { AddU(r.Strings, ExactNeedles[i]); } }
         for (int i = 0; i < StrongKeys.Length; i++) { if (r.StHit[i]) { AddU(r.Strings, StrongNames[i]); } }
@@ -1147,7 +1337,20 @@ public static class P1ScanV2
         return digit;
     }
 
-    static void ClassStats(string name, JarResultV2 r)
+    static readonly string[][] NameStatExemptPaths = new string[][] {
+        new string[] { "caffeine-", "com/github/benmanes/caffeine/cache/" }
+    };
+    static bool NameStatExempt(string name)
+    {
+        if (nestPath == null) { return false; }
+        foreach (string[] ex in NameStatExemptPaths)
+        {
+            if (nestPath.StartsWith(ex[0], StringComparison.Ordinal) && name.StartsWith(ex[1], StringComparison.Ordinal) && name.IndexOf('/', ex[1].Length) < 0) { return true; }
+        }
+        return false;
+    }
+
+    static void ClassStats(string name, JarResultV4 r)
     {
         r.Classes++;
         int slash = name.LastIndexOf('/');
@@ -1174,7 +1377,7 @@ public static class P1ScanV2
             if (conf || under) { r.Confusion++; }
             if (allAscii && cn.Length == 1) { r.Single1++; }
             if (allAscii && cn.Length == 2) { r.Two++; }
-            if (allAscii && cn.Length >= 3 && cn.Length <= 8)
+            if (allAscii && cn.Length >= 3 && cn.Length <= 8 && !NameStatExempt(name))
             {
                 int vowels = 0, run = 0, maxRun = 0;
                 foreach (char c in cn)
@@ -1196,12 +1399,12 @@ public static class P1ScanV2
         for (int i = 0; i < segs.Length - 1; i++)
         {
             string sg = segs[i];
-            if (sg.Length < 4 || !(sg[0] >= 'A' && sg[0] <= 'Z')) { continue; }
+            if (i >= 3 || sg.Length < 4 || !(sg[0] >= 'A' && sg[0] <= 'Z')) { continue; }
             bool lower = false;
             foreach (char ch in sg) { if (ch >= 'a' && ch <= 'z') { lower = true; break; } }
             if (lower) { upperPkg = true; break; }
         }
-        if (upperPkg) { r.UpperPkg++; }
+        if (upperPkg) { r.UpperPkg++; if (r.UpperPkgEx == null) { r.UpperPkgEx = name; } }
         int cons = 0, max = 0;
         for (int i = 0; i < segs.Length - 1; i++)
         {
@@ -1239,7 +1442,7 @@ public static class P1ScanV2
         return len;
     }
 
-    static void ReadJarsDecl(string text, JarResultV2 r)
+    static void ReadJarsDecl(string text, JarResultV4 r)
     {
         Match jm = Regex.Match(text, "\"jars\"\\s*:\\s*\\[(.*?)\\]", RegexOptions.Singleline);
         if (!jm.Success) { return; }
@@ -1250,7 +1453,7 @@ public static class P1ScanV2
         }
     }
 
-    static void ReadMeta(string n, string text, JarResultV2 r)
+    static void ReadMeta(string n, string text, JarResultV4 r)
     {
         Match m;
         if (n == "fabric.mod.json")
@@ -1271,7 +1474,7 @@ public static class P1ScanV2
         }
     }
 
-    static void ScanArchive(ZipArchive z, JarResultV2 r, int depth)
+    static void ScanArchive(ZipArchive z, JarResultV4 r, int depth)
     {
         foreach (ZipArchiveEntry e in z.Entries)
         {
@@ -1364,6 +1567,7 @@ public static class P1ScanV2
                     {
                         int len = ReadShared(e);
                         string js = Encoding.UTF8.GetString(tBuf, 0, len);
+                        if (n.EndsWith("MANIFEST.MF")) { js = StripDigests(js); }
                         if (depth == 0 && n.IndexOf('/') < 0 && n != "fabric.mod.json" && js.IndexOf("\"package\"", StringComparison.Ordinal) >= 0) { ReadMixinCfg(n, js, r); }
                         ScanContent(js, r, null);
                     }
@@ -1377,13 +1581,17 @@ public static class P1ScanV2
                     if (depth == 0) { r.NestedJars.Add(n.Substring(n.LastIndexOf('/') + 1)); }
                     if (e.Length > 0 && e.Length < 150000000)
                     {
-                        using (MemoryStream ms = new MemoryStream(ReadBytes(e)))
-                        using (ZipArchive nz = new ZipArchive(ms, ZipArchiveMode.Read))
+                        byte[] nb = ReadBytes(e);
+                        if (!IsKnownSafeNested(nb, n, r))
                         {
-                            string prevNest = nestPath;
-                            nestPath = n.Substring(n.LastIndexOf('/') + 1);
-                            try { ScanArchive(nz, r, depth + 1); }
-                            finally { nestPath = prevNest; }
+                            using (MemoryStream ms = new MemoryStream(nb))
+                            using (ZipArchive nz = new ZipArchive(ms, ZipArchiveMode.Read))
+                            {
+                                string prevNest = nestPath;
+                                nestPath = n.Substring(n.LastIndexOf('/') + 1);
+                                try { ScanArchive(nz, r, depth + 1); }
+                                finally { nestPath = prevNest; }
+                            }
                         }
                     }
                 }
@@ -1393,7 +1601,26 @@ public static class P1ScanV2
         }
     }
 
-    static void TolerantScan(string path, JarResultV2 r)
+    static string StripDigests(string text)
+    {
+        StringBuilder sb = new StringBuilder(text.Length);
+        bool inDigest = false;
+        foreach (string raw in text.Split('\n'))
+        {
+            string line = raw.TrimEnd('\r');
+            if (line.StartsWith(" ")) { if (inDigest) { continue; } }
+            else
+            {
+                int c = line.IndexOf(':');
+                inDigest = c > 0 && line.Substring(0, c).EndsWith("-Digest", StringComparison.OrdinalIgnoreCase);
+                if (inDigest) { continue; }
+            }
+            sb.Append(line).Append('\n');
+        }
+        return sb.ToString();
+    }
+
+    static void TolerantScan(string path, JarResultV4 r)
     {
         FileInfo fi = new FileInfo(path);
         if (fi.Length > 300000000) { return; }
@@ -1412,10 +1639,10 @@ public static class P1ScanV2
         }
     }
 
-    public static JarResultV2 ScanJar(string path)
+    public static JarResultV4 ScanJar(string path)
     {
         EnsureBuilt();
-        JarResultV2 r = new JarResultV2();
+        JarResultV4 r = new JarResultV4();
         r.ExHit = new bool[ExactNeedles.Length];
         r.StHit = new bool[StrongKeys.Length];
         r.ObHit = new bool[ObfNeedles.Length];
@@ -1432,29 +1659,39 @@ public static class P1ScanV2
         return r;
     }
 
-    static string Sha1Hex(string path)
+    static string Hex(byte[] h)
+    {
+        StringBuilder sb = new StringBuilder(h.Length * 2);
+        for (int i = 0; i < h.Length; i++) { sb.Append(h[i].ToString("x2")); }
+        return sb.ToString();
+    }
+
+    static string[] FileHashes(string path)
     {
         try
         {
             using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 81920))
-            using (SHA1 sha = SHA1.Create())
+            using (SHA1 s1 = SHA1.Create())
+            using (SHA256 s2 = SHA256.Create())
             {
-                byte[] h = sha.ComputeHash(fs);
-                StringBuilder sb = new StringBuilder(h.Length * 2);
-                for (int i = 0; i < h.Length; i++) { sb.Append(h[i].ToString("x2")); }
-                return sb.ToString();
+                byte[] buf = new byte[81920];
+                int n;
+                while ((n = fs.Read(buf, 0, buf.Length)) > 0) { s1.TransformBlock(buf, 0, n, null, 0); s2.TransformBlock(buf, 0, n, null, 0); }
+                s1.TransformFinalBlock(buf, 0, 0); s2.TransformFinalBlock(buf, 0, 0);
+                return new string[] { Hex(s1.Hash), Hex(s2.Hash) };
             }
         }
-        catch (Exception) { return null; }
+        catch (Exception) { return new string[] { null, null }; }
     }
 
-    public static ScanJobV2 StartScan(string[] paths, int threads)
+    public static ScanJobV4 StartScan(string[] paths, int threads)
     {
         EnsureBuilt();
-        ScanJobV2 job = new ScanJobV2();
+        ScanJobV4 job = new ScanJobV4();
         job.Total = paths.Length;
-        job.Results = new JarResultV2[paths.Length];
+        job.Results = new JarResultV4[paths.Length];
         job.Hashes = new string[paths.Length];
+        job.Sha256 = new string[paths.Length];
         job.Errors = new string[paths.Length];
         if (threads < 1) { threads = 1; }
         job.Task = Task.Factory.StartNew(delegate()
@@ -1465,7 +1702,8 @@ public static class P1ScanV2
             {
                 try
                 {
-                    job.Hashes[i] = Sha1Hex(paths[i]);
+                    string[] hh = FileHashes(paths[i]);
+                    job.Hashes[i] = hh[0]; job.Sha256[i] = hh[1];
                     job.Results[i] = ScanJar(paths[i]);
                 }
                 catch (Exception ex) { job.Errors[i] = ex.Message; }
@@ -1490,9 +1728,36 @@ public static class P1ScanV2
     }
 }
 '@
-if (-not ('P1ScanV2' -as [type])) {
+if (-not ('P1ScanV4' -as [type])) {
     if ($PSVersionTable.PSVersion.Major -ge 6) { Add-Type -TypeDefinition $scanSource }
     else { Add-Type -TypeDefinition $scanSource -ReferencedAssemblies 'System.IO.Compression','System.IO.Compression.FileSystem' }
+}
+$loadedBuild = try { [P1ScanV4]::BuildId } catch { $null }
+if ($loadedBuild -ne '2026-10-26.4') {
+    Write-Host '  An older copy of the scanner is still loaded in this PowerShell window.' -ForegroundColor Red
+    Write-Host '  Close this window, open a new PowerShell window and run the script again.' -ForegroundColor Red
+    return
+}
+
+$knownSafeNestedJars = @(
+    @{Sha256='e4c0fb74a6eaf3b797abc24703d247768715596245e4f26567a849fd3fc0281a'; Name='Reflect 1.6.2 (Lenni0451) - bundled by ImmediatelyFast 1.14.3'},
+    @{Sha256='1c9c71b21ecfb0bb312b16821f7d9e869519d2dbf3c66102be4155817da395af'; Name='MixinExtras 0.2.2 (LlamaLad7, Jitpack build) - bundled by BadOptimizations 2.4.1'},
+    @{Sha256='ad6ac92b5e9b1d47631dd9658188ec7a5a67b1f2c6cc9a07d03d2b6354925faf'; Name='CreamyKeys-modern 0.0.5 (cutebow) - keyboard sounds via OpenAL; audited, no input capture/network/exec'},
+    @{Sha256='5d729d3b8ddde5c4e84e3917866a32fa6aff868c97a0218ca669de6124e7414f'; Name="xaerolib-fabric 1.8.5 (Xaero) - bundled by Xaero's Minimap 26.6.2 / World Map 1.47.2; its Patreon auto-updater downloads xaero_autoupdater.jar (MD5-checked)"},
+    @{Sha256='64df268995f21c91304d6cb3102bfc107f3f8d22b52058d8538b75e5b9dc0e92'; Name='nexp 1.2.0 (hollowpoint) - expression engine bundled by Polytone 6.6.0; defineClass/loadLibrary appear only in its blocklist of forbidden calls'}
+)
+foreach ($k in $knownSafeNestedJars) { [P1ScanV4]::KnownSafeNested[$k.Sha256] = $k.Name }
+
+$knownSafeNatives = @(
+    @{Sha256='0688e0ca934be00daf9b5789d0f9058bc2b0e02b98a6516700b43fe001c206b7'; Name='SDL3.dll (win32-x86-64, UPX-packed) - bundled by Controlify 3.0.1'}
+)
+foreach ($k in $knownSafeNatives) { [P1ScanV4]::KnownSafeNative[$k.Sha256] = $k.Name }
+
+$knownCleanJars = @{
+    '50beea376423c305fc573d72d0fe95e5a883f10dd7ce83e0fa9be770d197bf7c' = 'Essential 1.5.1 (fabric 1.21.11) - a loader that downloads and class-loads the Essential mod at runtime by design'
+    'c8769a38b3cc1da2a7b2f5827d1a53a24cd1ef6d0784b1eb545569f5882a2ffb' = 'CustomSkinLoader 15.1 (Universal) - adds its common jar to the classpath and loads skin plugins'
+    '44474c582d2833fcc1c689b684c2bc7bbaaaceee2d77a26406e37bd79c303e3f' = 'Crash Assistant 1.11.12 (fabric 1.21.5-1.21.11) - runs a separate crash-report app and uploads logs on request'
+    '53652a6682d69b1a8924ee9ae8e61925551639ab540bd53f9814b1129435e7e5' = 'spark 1.10.170 (fabric) - profiler; attaches a Java agent (ByteBuddy) and async-profiler natives by design'
 }
 
 $cheatStrings = @(
@@ -1521,7 +1786,22 @@ $cheatStrings = @(
     "org/chainlibs/module/impl/modules","dev/gambleclient","xyz/greaj","dev/krypton","skid/krypton","com/cheatbreaker","net/ccbluex","today/opai","club/maxstats",
     "wtf/moonlight","me/zeroeightsix/kami","com/alan/clients","cc/novoline","net/minecraft/injection","meteordevelopment.meteorclient",
     "SessionStealer","TokenLogger","TokenGrabber","DiscordToken","ReverseShell","KeyLogger","JDWP.VirtualMachine.AllModules",
-    "was0ffh4ndM4cr0","0ffh4ndM4cr0"
+    "was0ffh4ndM4cr0","0ffh4ndM4cr0",
+    "pulsescanner","PulseScanner","Pulse Scanner","pulsescanner-data.bin","esp_lines","CrackedByLorex","LicenseGate",
+    "PvP/utility client","ClickGUI, HUD editor",
+    'pulse$macroUse','pulse$macroBreak','pulse$macroAttack','$macroUse','$macroBreak','$macroAttack',
+    '$ghostPush','$hitboxMargin','$crystalBounce','$combatKey','$combatButton','$totemStop','$combatMovement',
+    '$freecamFreeze','$freecamPosition','$freelookRotation','$trackCombatCamera','$riptideWithoutWater',
+    '$nameProtectTag','$nameProtectTab','$protectSkin','$licenseGate','$noHurtCam','$noWorldBob','$tierNametag',
+    "NameProtectHudMixin","NameProtectTextMixin","SkinProtectMixin","CombatClientMixin","CombatConnectionMixin",
+    "CombatKeyboardMixin","CombatMouseMixin","CombatEntityMixin","CombatItemStackMixin","CombatPlayerMixin",
+    "CombatPlayerListHudMixin","CombatWorldMixin",
+    'echonative','echoloader','echo-native-shutdown','echo-offline-shutdown',
+    'echo/offline/config/LocalConfigStore','echo/offline/mixin/ShutdownRenderMixin',
+    'echo$shutdownYieldReported','echo$yieldDuringShutdown',
+    '[echo shutdown]','[echo local configs]','dev/jadyen','dev.jadyen',
+    'list_profiles_json','get_profile_json','save_profile_json','select_profile_json','delete_profile_json',
+    'Local configs are in use by another instance'
 )
 
 $strongNames = @(
@@ -1552,7 +1832,8 @@ $strongNames = @(
     "AutoTPA","AutoBed","BedAura","BedBomb","AnchorFill","AutoBow","BowSpam","AutoCrit","CritBypass","ReachHack","ExtendReach","HitboxExpand",
     "VelocitySpoof","AutoCity","SelfTrap","HoleFiller","TargetStrafe","PacketFly","BoatFly","ScaffoldWalk","InstantBreak","StorageESP","PlayerESP",
     "CaveFinder","OreFinder","TargetHUD","ButterflyClick","JitterClick","InvMovebypass","FakeLatency","SpoofRotation","PacketDupe","HideClient",
-    "ChestStealer","CPSBoost","DoubleClicker","SpeedHack","FlyHack","WallHack"
+    "ChestStealer","CPSBoost","DoubleClicker","SpeedHack","FlyHack","WallHack",
+    "NameProtect","SkinProtect","ClickGUI","PulseScanner","MacroAttack","GhostPush","HitboxMargin","CrystalBounce"
 )
 
 $fwLabels = @(
@@ -1583,7 +1864,48 @@ $obfSignatures = @(
     @{Sig="aidsfuscator";Name="Aidsfuscator"}, @{Sig="Aidsfuscator";Name="Aidsfuscator"}, @{Sig="dev/lvstrng";Name="Aidsfuscator"},
     @{Sig="ALLATORIxDEMO";Name="Allatori"}, @{Sig="Obfuscation by Allatori";Name="Allatori"},
     @{Sig="net/spartanb312/grunt";Name="Grunt"}, @{Sig="net.spartanb312.grunt";Name="Grunt"},
-    @{Sig="native0/";Name="native-obfuscator (radioegor146)"}
+    @{Sig="native0/";Name="native-obfuscator (radioegor146)"}, @{Sig="registerNativesForClass";Name="native-obfuscator (radioegor146)"},
+    @{Sig="dev/jadyen/drm";Name="jadyen DRM protector (Echo)"}, @{Sig="dev.jadyen.drm";Name="jadyen DRM protector (Echo)"},
+    @{Sig="dev/jadyen/mirage";Name="jadyen Mirage in-memory class loader"}, @{Sig="MirageStreamHandler";Name="jadyen Mirage in-memory class loader"}
+)
+
+$nativeSignatures = @(
+    @{Sig='hack/echo/client/';Name='Echo client classes (hack/echo/client)';Kind='Cheat'},
+    @{Sig='loader.echoclient.net';Name='Echo client loader/auth host (echoclient.net)';Kind='Cheat'},
+    @{Sig='discord.gg/echoclient';Name='Echo client Discord invite';Kind='Cheat'},
+    @{Sig='crust-stage-echonative';Name='echonative build path (crust-stage-echonative)';Kind='Cheat'},
+    @{Sig='echonative.pdb';Name='echonative.pdb debug path';Kind='Cheat'},
+    @{Sig='echo-offline-session';Name='Echo offline-crack session stub';Kind='Cheat'},
+    @{Sig='echo-bootstrap-';Name='Echo bootstrap marker';Kind='Cheat'},
+    @{Sig='[echo offline]';Name='Echo offline-crack log prefix';Kind='Cheat'},
+    @{Sig='start_echo_stream';Name='Echo encrypted class stream (start/end magic)';Kind='Obf'},
+    @{Sig='echo-resource:/cache-data/';Name='Echo in-memory resource scheme (echo-resource:)';Kind='Obf'},
+    @{Sig='dev.jadyen.drm.echo.Helper';Name='jadyen DRM protector (Echo hashed-string resolver)';Kind='Obf'},
+    @{Sig='dev/jadyen/mirage/loader/MirageStreamHandler';Name='jadyen Mirage in-memory class loader';Kind='Obf'},
+    @{Sig='Failed to resolve string for hash';Name='Echo hashed-string table (strings resolved by hash)';Kind='Obf'},
+    @{Sig='HMAC verification failed: stream may be corrupt or tampered';Name='Echo HMAC-sealed class stream';Kind='Obf'},
+    @{Sig='SetWindowDisplayAffinity';Name='Native library can exclude its own window from screen capture/screen-share (SetWindowDisplayAffinity)';Kind='Inject'},
+    @{Sig='Self destructs the client to hide any traces of itself';Name='Echo feature text: self-destruct / trace hiding';Kind='Cheat'},
+    @{Sig='Replaces your name and skin everywhere they are shown';Name='Echo feature text: name/skin hiding (anti-screenshare)';Kind='Cheat'},
+    @{Sig='Transaction packet logging. Useful for figuring out the anticheat of a server';Name='Echo feature text: anticheat probing (transaction logger)';Kind='Cheat'},
+    @{Sig='Reveals obfuscated blocks by bruteforcing each block';Name='Echo feature text: block bruteforce ESP';Kind='Cheat'},
+    @{Sig='Hit Crystal, places obsidian and switches to crystal when you press the activate key';Name='Echo feature text: hit-crystal / crystal macro';Kind='Cheat'},
+    @{Sig='Spam attack and use clicks while holding a crystal, without checking for crystals';Name='Echo feature text: hit-crystal / crystal macro';Kind='Cheat'},
+    @{Sig='Automates anchor placement, charging, and detonation near your target';Name='Echo feature text: anchor macro';Kind='Cheat'},
+    @{Sig='Place a block between you and the anchor before charging';Name='Echo feature text: anchor macro';Kind='Cheat'},
+    @{Sig='Hold the activate key and right-click glowstone on a placed anchor to charge and detonate it';Name='Echo feature text: anchor macro';Kind='Cheat'},
+    @{Sig='Swaps a totem into your main hand on pop, on inventory open, or when explosion damage is predicted';Name='Echo feature text: auto totem';Kind='Cheat'},
+    @{Sig='Delays incoming knockback packets';Name='Echo feature text: knockback manipulation';Kind='Cheat'},
+    @{Sig='Delays knockback hits by one tick to redirect knockback';Name='Echo feature text: knockback manipulation';Kind='Cheat'},
+    @{Sig='Automatically catches ender pearls thrown by the player';Name='Echo feature text: pearl catch / pearl macros';Kind='Cheat'},
+    @{Sig='Throws an ender pearl that hits the best player target';Name='Echo feature text: pearl catch / pearl macros';Kind='Cheat'},
+    @{Sig='Tp to the sky with a wind charge and enderpearl';Name='Echo feature text: pearl catch / pearl macros';Kind='Cheat'},
+    @{Sig='Automatically aims at targets while holding a spear';Name='Echo feature text: spear aim assist';Kind='Cheat'},
+    @{Sig='Lights a fire, lays a TNT cart and shoots your crossbow through it';Name='Echo feature text: TNT-cart macro';Kind='Cheat'},
+    @{Sig='Instant Dive Bomb';Name='Echo feature text: elytra/mace dive bomb';Kind='Cheat'},
+    @{Sig='Pearl Grapple';Name='Echo feature text: pearl macros';Kind='Cheat'},
+    @{Sig='Block Bruteforcer';Name='Echo feature text: block bruteforce ESP';Kind='Cheat'},
+    @{Sig='Spear D-tap';Name='Echo feature text: spear aim assist';Kind='Cheat'}
 )
 
 $entryPatterns = @(
@@ -1598,10 +1920,13 @@ $entryPatterns = @(
     "org.chainlibs.module.impl.modules","org/chainlibs/module/impl/modules","KillAura","CrystalAura","AnchorAura","BedAura","LootYeeter","StashFinder",
     "PacketFly","ScaffoldWalk","ChestStealer","TargetStrafe","SessionStealer","TokenGrabber","ReverseShell","ClientNetworkingCore","clientnetworkingcore",
     "AutoHitCyst4l","Aut0Cryst4l","Aut0Cryst3l","Anch0rMacr0",
+    "pulsescanner","esp_lines","LicenseGate","NameProtectHudMixin","NameProtectTextMixin","SkinProtectMixin","CombatClientMixin","CombatConnectionMixin",
+    "CombatKeyboardMixin","CombatMouseMixin","CombatEntityMixin","CombatItemStackMixin","CombatPlayerMixin","CombatPlayerListHudMixin","CombatWorldMixin",
     ([string][char]0x3058 + ".class"),([string][char]0x3075 + ".class"),([string][char]0x3076 + ".class"),([string][char]0x3077 + ".class"),([string][char]0x305F + ".class"),
     ([string][char]0x306D + ".class"),([string][char]0x305D + ".class"),([string][char]0x306A + ".class"),([string][char]0x3069 + ".class"),([string][char]0x3050 + ".class"),
     ([string][char]0x305A + ".class"),([string][char]0x3067 + ".class"),([string][char]0x3064 + ".class"),([string][char]0x3079 + ".class"),([string][char]0x305B + ".class"),
-    ([string][char]0x3068 + ".class"),([string][char]0x307F + ".class"),([string][char]0x3073 + ".class"),([string][char]0x3059 + ".class"),([string][char]0x306E + ".class")
+    ([string][char]0x3068 + ".class"),([string][char]0x307F + ".class"),([string][char]0x3073 + ".class"),([string][char]0x3059 + ".class"),([string][char]0x306E + ".class"),
+    "echonative","echo-offline-shutdown","echo/offline","dev/jadyen","hack/echo","hack/PageParser"
 )
 
 $disallowedMods = @{
@@ -1653,8 +1978,18 @@ $falseFlagSlugs = @{
     "silicon"         = "Silicon is a known legit mod (its update checker spawns a process)"
     "viafabric"       = "ViaFabric is a known legit mod (ViaVersion metrics POST)"
     "viaversion"      = "ViaVersion is a known legit mod (metrics POST)"
+    "immediatelyfast" = "ImmediatelyFast is a known legit mod (bundles Lenni0451's Reflect library: URLClassLoader / defineClass / Unsafe helpers)"
+    "badoptimizations"= "BadOptimizations is a known legit mod (bundles MixinExtras, which defines generated classes at runtime)"
     "inventory-profiles-next" = ""
     "inventoryprofilesnext"   = ""
+    "essential"        = "Essential is a known legit mod (its loader downloads and class-loads the Essential jar at runtime)"
+    "customskinloader" = "CustomSkinLoader is a known legit mod (adds its common jar to the classpath, loads skin plugins)"
+    "crash-assistant"  = "Crash Assistant is a known legit mod (runs a separate crash-report app, uploads logs on request)"
+    "spark"            = "spark is a known legit mod (profiler - self-attaches a Java agent via ByteBuddy)"
+    "xaeros-minimap"   = "Xaero's Minimap is a known legit mod (Patreon auto-updater downloads xaero_autoupdater.jar)"
+    "xaeros-world-map" = "Xaero's World Map is a known legit mod (Patreon auto-updater downloads xaero_autoupdater.jar)"
+    "polytone"         = "Polytone is a known legit mod (bundles the nexp expression engine)"
+    "controlify"       = "Controlify is a known legit mod (bundles a UPX-packed SDL3.dll)"
 }
 $script:MinDownloads = 2000
 $impersonationTargets = @(
@@ -1670,6 +2005,57 @@ $knownLegitModIds = @("vmp-fabric","vmp","lithium","sodium","iris","fabric-api",
                       "memoryleakfix","krypton","c2me-fabric","smoothboot-fabric","immediatelyfast","noisium","threadtweak")
 $legitAgents = @('jmxremote','yjp','jrebel','newrelic','jacoco','theseus')
 $mavenPrefixes = @("com_","org_","net_","io_","dev_","gs_","xyz_","app_","me_","tv_","uk_","be_","fr_","de_")
+
+$clientSignatures = @(
+    @{ Client = 'LarpClient (Tobias)'
+       Paths   = @('com/larp/obf', 'com/larp/protection', 'com/larp/crack', 'com/larp/updater', 'com/phantom/client', 'phantom.mixins.json', 'fake-spawner.mixins.json', 'phantom.accesswidener', 'assets/larp-client', 'larp/bodies.bin', 'larp/constants.bin', 'larp-version.properties', 'LICENSE_LarpClient')
+       Strings = @('LarpCrack', 'com.larpclient.microsoft-accounts', 'LarpClient Microsoft accounts', 'com/phantom/client/PhantomClient') },
+    @{ Client = 'Astral Client'
+       Paths   = @('com/astralclient', 'astralclient.mixins.json', 'astral_license.dat', 'astral_license_pub.txt', 'assets/astralclient')
+       Strings = @('com/astralclient/AstralClient', 'Astral Client') },
+    @{ Client = 'Kryzel Client (Kc)'
+       Paths   = @('dev/kc/KcClient', 'dev/kc/modules', 'dev/kc/setting')
+       Strings = @('Kryzel Client', 'dev/kc/KcClient') },
+    @{ Client = 'Tuff Client'
+       Paths   = @('com/tuffclient', 'tuffclient.mixins.json', 'tuffclient.accesswidener', 'assets/tuffclient')
+       Strings = @('com/tuffclient/TuffClient', 'Tuff Client') },
+    @{ Client = 'Pulse Scanner'
+       Paths   = @('pulsescanner/license', 'pulsescanner.mixins.json', 'pulsescanner-data.bin', 'pulsescanner.accesswidener')
+       Strings = @('Pulse Scanner') },
+    @{ Client = 'Silver (cracked, offline bridge)'
+       Paths   = @('silver/OfflineBridge', 'silver_offline.mixins.json', 'silver_offline_payload.mixins.json', 'silver_offline/entrypoints.properties', 'silver.payload.entrypoints', 'Silver-Loader.jar', 'silveroptimize.refmap.json', 'assets/silveroptimize')
+       Strings = @('silver_offline_bridge', 'silver.OfflineBridge', 'Silver Cracked') },
+    @{ Client = 'Echo client (loader)'
+       Paths   = @('dev/jadyen/drm/echo', 'echo-offline-shutdown.mixins.json', 'echonative.dll')
+       Strings = @('dev.jadyen.drm.echo.loader') },
+    @{ Client = 'Orchard client (Nitro / ilovcats build)'
+       Paths   = @('dev/hawk22e', 'ilovcats.mixins.json', 'LICENSE_ilovcats-client', 'assets/cats/spotify')
+       Strings = @('key.ilovcats.panel', 'category.ilovcats.main', 'dev.hawk22e.core') },
+    @{ Client = 'Orchard client 1.8.6 (hash-renamed build)'
+       Paths   = @('qeaa361f143ee4a0894bd168fd9b30c66', 'qc8554d41d3d502394f8e.mixins.json', 'qf5f6b488c53a02fb106e', '42ef6d8f-e867-4e08-91b5-f19765a90403.bin')
+       Strings = @('key.nsc.panel', 'category.nsc.main', 'key.category.nsc.controls') },
+    @{ Client = 'MavenInjector (Java-agent injector)'
+       Paths   = @('dev/maveninjector', 'assets/maveninjector')
+       Strings = @('dev.maveninjector.agent.MavenInjectorAgent', 'MavenInjectorLauncher', 'MavenInjectorAgent') },
+    @{ Client = 'rustlib payload (no mod metadata - loaded by an injector)'
+       Paths   = @('rustlib/protect', 'rustlib/menu/menu', 'rustlib/mod/core', 'rustlib/license.key', 'assets/rustlib')
+       Strings = @('rustlib/mod/core/ModUnit', 'rustlib/menu/menu/LootTableScreen') },
+    @{ Client = '22qq (cheat hidden inside a fake Very Many Players)'
+       Paths   = @('com/ishland/vmp/mixin/EndKrystalItemMixin', 'com/ishland/vmp/mixin/CPIMM', 'com/ishland/vmp/VMPMod/VMPMod')
+       Strings = @('LWFHTEXT', 'com/ishland/vmp/mixin/EndKrystalItemMixin') },
+    @{ Client = 'Aurora client (disguised as jimfs / Mlab)'
+       Paths   = @('com/google/common/jimfs/fabric', 'client-jimfs-refmap.json', 'jimfs.mixins.json')
+       Strings = @('com.google.common.jimfs.fabric', 'FabricMlabClient') },
+    @{ Client = 'SprintByDefault trojan (payload hidden in fake Lithium packages)'
+       Paths   = @('net/caffeinemc/mods/lithium/fabric/compat/core', 'net/caffeinemc/mods/lithium/fabric/helper', 'sprintbydefault.compat.json', 'sprintbydefault.compat.map.json')
+       Strings = @('net.caffeinemc.mods.lithium.fabric.compat.core.RenderController', 'sprintbydefault.compat.map.json') },
+    @{ Client = 'Continuity trojan (ClientNetworkingCore payload)'
+       Paths   = @('continuity_merged_networking.mixins.json', 'clientnetworkingcore.client.mixins.json', 'net/clientnetworkingcore')
+       Strings = @('net.clientnetworkingcore.FabricNetworkingImpl') }
+)
+foreach ($c in $clientSignatures) { $entryPatterns += $c.Paths; $cheatStrings += $c.Strings }
+$clientSigLabel = @{}
+foreach ($c in $clientSignatures) { foreach ($x in @($c.Paths) + @($c.Strings)) { if (-not $clientSigLabel.ContainsKey($x)) { $clientSigLabel[$x] = $c.Client } } }
 
 $exactSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($s in $cheatStrings) { [void]$exactSet.Add($s) }
@@ -1692,12 +2078,15 @@ $script:StrongValArr = [string[]]@($strongKeys | ForEach-Object { $strongMap[$_]
 $script:FwKeyArr = [string[]]$fwKeys
 $script:FwValArr = [string[]]@($fwKeys | ForEach-Object { $fwMap[$_] })
 
-[P1ScanV2]::ExactNeedles = [string[]]@($exactSet)
-[P1ScanV2]::StrongKeys   = [string[]]$strongKeys
-[P1ScanV2]::StrongNames  = [string[]]@($strongKeys | ForEach-Object { $strongMap[$_] })
-[P1ScanV2]::ObfNeedles   = [string[]]@($obfSignatures | ForEach-Object { $_.Sig })
-[P1ScanV2]::ObfNames     = [string[]]@($obfSignatures | ForEach-Object { $_.Name })
-[P1ScanV2]::SetEntryPatterns([string[]]$entryPatterns)
+[P1ScanV4]::ExactNeedles = [string[]]@($exactSet)
+[P1ScanV4]::StrongKeys   = [string[]]$strongKeys
+[P1ScanV4]::StrongNames  = [string[]]@($strongKeys | ForEach-Object { $strongMap[$_] })
+[P1ScanV4]::ObfNeedles   = [string[]]@($obfSignatures | ForEach-Object { $_.Sig })
+[P1ScanV4]::ObfNames     = [string[]]@($obfSignatures | ForEach-Object { $_.Name })
+[P1ScanV4]::NativeNeedles = [string[]]@($nativeSignatures | ForEach-Object { $_.Sig })
+[P1ScanV4]::NativeNames   = [string[]]@($nativeSignatures | ForEach-Object { $_.Name })
+[P1ScanV4]::NativeKinds   = [string[]]@($nativeSignatures | ForEach-Object { $_.Kind })
+[P1ScanV4]::SetEntryPatterns([string[]]$entryPatterns)
 
 $jvmRules = @(
     @{ Cat='Fabric injection';        Rx='-Dfabric\.(addMods|loadMods|classPathGroups|gameJarPath|skipMcProvider|development|allowUnsupportedVersion|remapClasspathFile|skipIntermediary|customModList|resolve\.modFiles|skipDependencyResolution|loader\.entrypoints|language\.providers|mods\.toml\.path|mixin\.hotSwap|mixin\.configs|mixin\.debug\.export|debug\.dumpClasspath)=\S*' },
@@ -1709,7 +2098,7 @@ $jvmRules = @(
     @{ Cat='Attach API blocked';      Rx='-XX:\+DisableAttachMechanism' },
     @{ Cat='Cheat client brand';      Rx='-D(client|launcher)\.brand=(Wurst|Aristois|Impact|Kilo|Future|Lambda|Rusher|Konas|Phobos|Salhack|ForgeHax|Mathax|Meteor|Async|Seppuku|Xatz|Wolfram|Huzuni|Jigsaw|Zamorozka|Moon|Rage|Exhibition|Virtue|Novoline|Rekt|Skid|Ares|Abyss|Thunder|Tenacity|Rise|Flux|Gamesense|Intent|Remix|Sight|Vape|Shield|Ghost|Crispy|Inertia)\S*' },
     @{ Cat='Cheat property';          Rx='-D(xray|fly|speed|killaura|reach|esp|wallhack|noclip|autoclick|aimbot|triggerbot|antiknockback|nofall|timer|step|fullbright|nightvision|cavefinder)\.\S*' },
-    @{ Cat='Cheat client name';       Rx='(?i)(wurst|aristois|rusherhack|konas|phobos|salhack|forgehax|mathax|seppuku|huzuni|zamorozka|novoline|liquidbounce|meteor-?client|vapeclient|doomsday|prestigeclient)[\w\.\-]*' },
+    @{ Cat='Cheat client name';       Rx='(?i)(wurst|aristois|rusherhack|konas|phobos|salhack|forgehax|mathax|seppuku|huzuni|zamorozka|novoline|liquidbounce|meteor-?client|vapeclient|doomsday|prestigeclient|maveninjector)[\w\.\-]*' },
     @{ Cat='Encoded injection';       Rx='(%3B|%26%26|%7C%7C|%7C|%60|%24|%3C|%3E)' },
     @{ Cat='Module patching';         Rx='--(patch-module|upgrade-module-path)[= ]\S+' },
     @{ Cat='Module access opened (normal for Forge/NeoForge, rare for Fabric)'; Rx='--add-(opens|exports|reads)[= ]\S+' },
@@ -2291,7 +2680,7 @@ function Get-ZoneInfo([string]$p) {
     return $r
 }
 function Resolve-Fullwidth($runs) {
-    $r = [P1ScanV2]::ResolveFullwidth([string[]]@($runs), $script:StrongKeyArr, $script:StrongValArr, $script:FwKeyArr, $script:FwValArr)
+    $r = [P1ScanV4]::ResolveFullwidth([string[]]@($runs), $script:StrongKeyArr, $script:StrongValArr, $script:FwKeyArr, $script:FwValArr)
     return @{ Resolved = @($r[0]); Unknown = @($r[1]) }
 }
 function Get-McVersion($Inst) {
@@ -2310,7 +2699,7 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
 
     $jars = @(Get-ChildItem -LiteralPath $ModsFolder -Filter *.jar -File -Force -ErrorAction SilentlyContinue)
     $odd  = @(Get-ChildItem -LiteralPath $ModsFolder -File -Force -ErrorAction SilentlyContinue | Where-Object {
-                $_.Extension -ne '.jar' -and $_.Extension -ne '.disabled' -and $_.Length -gt 1KB -and [P1ScanV2]::HasZipMagic($_.FullName) })
+                $_.Extension -ne '.jar' -and $_.Extension -ne '.disabled' -and $_.Length -gt 1KB -and [P1ScanV4]::HasZipMagic($_.FullName) })
     $oddNames = @{}; foreach ($o in $odd) { $oddNames[$o.FullName] = $true }
     $targets = @($jars) + @($odd)
     if ($targets.Count -eq 0) {
@@ -2322,7 +2711,7 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
 
     $threads = [math]::Max(1, [math]::Min([Environment]::ProcessorCount, 6))
     Write-Info "Hashing + deep scanning $($targets.Count) file(s) on $threads thread(s)..."
-    $job = [P1ScanV2]::StartScan([string[]]@($targets | ForEach-Object { $_.FullName }), $threads)
+    $job = [P1ScanV4]::StartScan([string[]]@($targets | ForEach-Object { $_.FullName }), $threads)
     $spin = @("|","/","-","\"); $tick = 0
     while (-not $job.Task.IsCompleted) {
         Write-Host ("`r  [{0}] {1}/{2} scanned" -f $spin[$tick % 4], $job.Done, $targets.Count) -NoNewline -ForegroundColor Yellow
@@ -2331,8 +2720,8 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
     try { $job.Task.Wait() } catch {}
     Write-Host ("`r" + (' ' * 78) + "`r") -NoNewline
 
-    $hashes = @{}
-    for ($hi = 0; $hi -lt $targets.Count; $hi++) { $hashes[$targets[$hi].FullName] = $job.Hashes[$hi] }
+    $hashes = @{}; $sha256s = @{}
+    for ($hi = 0; $hi -lt $targets.Count; $hi++) { $hashes[$targets[$hi].FullName] = $job.Hashes[$hi]; $sha256s[$targets[$hi].FullName] = $job.Sha256[$hi] }
 
     Invoke-BulkHashLookup @($hashes.Values)
     Write-Ok "$($script:HashHits.Count) exact-hash match(es) on Modrinth"
@@ -2370,12 +2759,20 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             }
         }
         $exempt = ($vtype -eq 'Hash')
+        $sha256 = $sha256s[$f.FullName]
+        $cleanLabel = $null
+        if ($sha256 -and $knownCleanJars.ContainsKey($sha256)) {
+            $cleanLabel = $knownCleanJars[$sha256]
+            if (-not $modName) { $modName = ($cleanLabel -split ' - ', 2)[0] }
+            $vtype = 'Allowlist'; $hint = ''; $tamper.Clear()
+        }
 
         $strings = New-Object System.Collections.Generic.List[string]
         foreach ($s in $jr.Strings) { [void]$strings.Add($s) }
         $fw = Resolve-Fullwidth $jr.FwRuns
         foreach ($r in $fw.Resolved) { if (-not $strings.Contains($r)) { [void]$strings.Add($r) } }
         $patterns = @($jr.PatternHits | Sort-Object -Unique)
+        $clientsHit = @(@($strings) + @($patterns) | Where-Object { $clientSigLabel.ContainsKey($_) } | ForEach-Object { $clientSigLabel[$_] } | Sort-Object -Unique)
         $fwUnknown = @($fw.Unknown)
         $notes = New-Object System.Collections.Generic.List[string]
 
@@ -2388,7 +2785,12 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             $isFalseFlag = $true
         }
         if ($exempt -and $jr.ModId -eq 'marlowcrystal' -and $strings.Contains('EndCrystalItemMixin')) {
-            $notes.Add("Marlow's Crystal Optimizer has its own EndCrystalItemMixin - may be a false flag, decompile to confirm")
+            if (-not $isFalseFlag -and $strings.Count -eq 1 -and ($patterns.Count + $fwUnknown.Count) -eq 0) {
+                $notes.Add("Known false-flag: Marlow's Crystal Optimizer is a known legit mod (has its own EndCrystalItemMixin) (hash verified)")
+                $isFalseFlag = $true
+            } elseif (-not $isFalseFlag) {
+                $notes.Add("Marlow's Crystal Optimizer has its own EndCrystalItemMixin - that hit is a known false flag, but other cheat hits remain")
+            }
         }
 
         $tc = [double]$jr.Classes
@@ -2412,7 +2814,7 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
         if ($tc -ge 10 -and $hn -ge 20) { $obfReasons.Add("Hash-style class names ($hn% - machine-generated identifiers like q<32 hex chars>)") }
         if ($tc -ge 10 -and $hp -ge 25) { $obfReasons.Add("Hash-style package folders ($hp% of classes in hex-digest paths)") }
         $up2 = if ($tc -ge 10) { [math]::Round($jr.UpperPkg / $tc * 100) } else { 0 }
-        if ($jr.UpperPkg -ge 10 -and $up2 -ge 10) { $obfReasons.Add("Class-named package folders ($($jr.UpperPkg) classes, $up2% - e.g. pkg/VMPMod/ITickableChunkSource.class, a trick to blend in as a legit mod)") }
+        if ($jr.UpperPkg -ge 10 -and $up2 -ge 10) { $obfReasons.Add("Class-named package folders ($($jr.UpperPkg) classes, $up2% a trick to blend in as a legit mod)") }
         $sd = if ($tc -ge 10) { [math]::Round($jr.StrDecrypt / $tc * 100) } else { 0 }
         if ($jr.StrDecrypt -ge 20 -and $sd -ge 15) { $obfReasons.Add("String encryption - stack-trace-keyed string decryptor present in $($jr.StrDecrypt) classes ($sd%); real strings are hidden from scanning") }
         if ($jr.SfTotal -ge 20) {
@@ -2456,6 +2858,7 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
         $bypass = New-Object System.Collections.Generic.List[string]
         $op2 = if ($tc -ge 10) { [math]::Round($jr.ObfPath / $tc * 100) } else { 0 }
         foreach ($nj in $jr.NestedJars) {
+            if ($jr.KnownNested -contains $nj) { continue }
             $b = [System.IO.Path]::GetFileNameWithoutExtension($nj)
             $sus = $true
             if ($b -match '\d') { $sus = $false }
@@ -2466,6 +2869,7 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
         if ($jr.NestedJars.Count -eq 1 -and $jr.OwnClasses -lt 3) { $bypass.Add("Hollow shell - only $($jr.OwnClasses) own class(es), wraps: $($jr.NestedJars[0])") }
         if ($jr.Exec -and $op2 -ge 25) { $bypass.Add("Runtime.exec() in obfuscated code - can run arbitrary OS commands") }
         if ($jr.Download) { $bypass.Add("HTTP file download - fetches and writes files from a remote server at runtime") }
+        elseif ($jr.DownloadAsset -and $jr.LoaderHits.Count -gt 0) { $bypass.Add("HTTP file download in a jar that also loads external code - fetches and writes files from a remote server at runtime") }
         if ($jr.Exfil)    { $bypass.Add("HTTP POST exfiltration - sends system data to an external server") }
         if ($jr.Robot)    { $bypass.Add("Java Robot (java.awt.Robot) - can simulate mouse/keyboard input and capture the screen; used by auto-clickers and input macros") }
         foreach ($lh in $jr.LoaderHits) { $bypass.Add("Custom class loading - $lh") }
@@ -2484,10 +2888,13 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             $bypass.Add("Hidden file attribute enabled ($($attrHidden -join '+')) - mod is concealed from Explorer and normal directory listings; scanned anyway")
         }
 
-        if ($jr.SoftHits.Count -gt 0) {
-            if ($bypass.Count -gt 0 -or $obfReasons.Count -gt 0 -or $obfSigs.Count -gt 0 -or $tamper.Count -gt 0) {
-                foreach ($sh in $jr.SoftHits) { $bypass.Add("$sh (supporting indicator)") }
-            }
+        $softAll = New-Object System.Collections.Generic.List[string]
+        foreach ($sh in $jr.SoftHits) { $softAll.Add($sh) }
+        if ($jr.DownloadAsset -and -not $jr.Download -and $jr.LoaderHits.Count -eq 0) { $softAll.Add("Downloads files over HTTP (no executable file type or code loading in the downloading class)") }
+        $supporting = @()
+        if ($softAll.Count -gt 0) {
+            if ($bypass.Count -gt 0) { foreach ($sh in $softAll) { $bypass.Add("$sh (supporting indicator)") } }
+            elseif ($obfReasons.Count -gt 0 -or $obfSigs.Count -gt 0 -or $tamper.Count -gt 0) { $supporting = @($softAll) }
         }
 
         if ($exempt -and $ffKey -and $bypass.Count -gt 0) {
@@ -2501,6 +2908,17 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
                 $notes.Add("Known false-flag: $($suppressed.Count) injection finding(s) suppressed")
                 $isFalseFlag = $true
             }
+        }
+
+        if ($cleanLabel) {
+            $keepRx = '^(Hidden file attribute|Archive hidden behind)'
+            $suppressedN = @($bypass | Where-Object { $_ -notmatch $keepRx }).Count + $obfReasons.Count + $obfSigs.Count + $strings.Count + $patterns.Count + $fwUnknown.Count
+            $kept = @($bypass | Where-Object { $_ -match $keepRx })
+            $bypass.Clear(); foreach ($k in $kept) { $bypass.Add($k) }
+            $obfReasons.Clear(); $obfSigs.Clear(); $supporting = @()
+            $notes.Add("Known clean build (SHA-256 allowlisted): $cleanLabel")
+            if ($suppressedN -gt 0) { $notes.Add("Allowlisted: $suppressedN heuristic finding(s) suppressed") }
+            $isFalseFlag = $true
         }
 
         $disallowed = $null
@@ -2517,14 +2935,15 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             if ($hit) { $disallowed = $disallowedMods[$slugD][0]; break }
         }
 
+        foreach ($cl in $clientsHit) { $notes.Insert(0, "Identified client: $cl") }
         if ($Inst -and $Inst.StartTime -and $f.LastWriteTime -gt $Inst.StartTime) { $notes.Add("Modified/added AFTER the game launched ($($f.LastWriteTime))") }
 
         $results.Add([PSCustomObject]@{
-            File=$f.Name; Path=$f.FullName; Hash=$hash; SizeKB=[math]::Round($f.Length/1KB, 2); ExpectedKB=[math]::Round($expected/1KB, 2)
+            File=$f.Name; Path=$f.FullName; Hash=$hash; Sha256=$sha256; SizeKB=[math]::Round($f.Length/1KB, 2); ExpectedKB=[math]::Round($expected/1KB, 2)
             VType=$vtype; ModName=$modName; Slug=$slug; Url=$url; Hint=$hint; Downloads=$dl; Source=$zone.Source; SourceUrl=$zone.Url
             JarId=$jr.ModId; JarName=$jr.Name; JarVer=$jr.Version; Loader=$jr.Loader; Classes=$jr.Classes
             Strings=@($strings | Sort-Object); Patterns=$patterns; FwUnknown=$fwUnknown; Tamper=@($tamper); ObfReasons=@($obfReasons); ObfSigs=@($obfSigs)
-            Bypass=@($bypass); Disallowed=$disallowed; Notes=@($notes); FalseFlag=$isFalseFlag
+            Bypass=@($bypass); Supporting=@($supporting); Disallowed=$disallowed; Notes=@($notes); FalseFlag=$isFalseFlag
         })
         } catch {
             $errMsg = "$($_.Exception.Message) (script line $($_.InvocationInfo.ScriptLineNumber))"
@@ -2532,11 +2951,11 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
             Write-Host ("`r" + (' ' * 78) + "`r") -NoNewline
             Write-Fail "Scan error on $($f.Name): $errMsg"
             $results.Add([PSCustomObject]@{
-                File=$f.Name; Path=$f.FullName; Hash=$null; SizeKB=[math]::Round($f.Length/1KB, 2); ExpectedKB=0
+                File=$f.Name; Path=$f.FullName; Hash=$null; Sha256=$null; SizeKB=[math]::Round($f.Length/1KB, 2); ExpectedKB=0
                 VType='None'; ModName=''; Slug=''; Url=''; Hint=''; Downloads=$null; Source='Unknown'; SourceUrl=''
                 JarId=''; JarName=''; JarVer=''; Loader=''; Classes=0
                 Strings=@(); Patterns=@(); FwUnknown=@(); Tamper=@(); ObfReasons=@(); ObfSigs=@()
-                Bypass=@(); Disallowed=$null; Notes=@("SCAN ERROR - file was NOT fully analyzed: $errMsg"); FalseFlag=$false
+                Bypass=@(); Supporting=@(); Disallowed=$null; Notes=@("SCAN ERROR - file was NOT fully analyzed: $errMsg"); FalseFlag=$false
             })
         }
     }
@@ -2578,8 +2997,9 @@ foreach ($g in $groups) {
         Write-Host $m.ModName -NoNewline -ForegroundColor White
         Write-Host "  $gArrow  $($m.File)" -NoNewline -ForegroundColor DarkGray
         if ($m.VType -eq 'Name') { Write-Host "  (name+size match)" -NoNewline -ForegroundColor DarkGray }
+        if ($m.VType -eq 'Allowlist') { Write-Host "  (allowlisted SHA-256)" -NoNewline -ForegroundColor DarkGray }
         Write-Host ""
-        if ($null -ne $m.Downloads) {
+        if ($m.VType -eq 'Allowlist') { } elseif ($null -ne $m.Downloads) {
             if ([int64]$m.Downloads -lt $script:MinDownloads) {
                 Write-Host ("        " + $gWarn + " LOW DOWNLOADS: only {0:N0} on Modrinth (under {1:N0}) - verify this mod manually" -f [int64]$m.Downloads, $script:MinDownloads) -ForegroundColor Magenta
             }
@@ -2612,7 +3032,7 @@ foreach ($g in $groups) {
     }
 
     if ($obf.Count -gt 0) { Write-Sub "Obfuscated mods" $obf.Count 'Orange' }
-    foreach ($m in $obf) { Write-Card 'OBFUSCATED' 'Orange' $m.File @(@{ Head = 'Indicators'; Items = $m.ObfReasons; Color = 'Orange' }, @{ Head = 'Detected issues'; Items = $m.ObfSigs; Color = 'Red' }) }
+    foreach ($m in $obf) { Write-Card 'OBFUSCATED' 'Orange' $m.File @(@{ Head = 'Indicators'; Items = $m.ObfReasons; Color = 'Orange' }, @{ Head = 'Detected issues'; Items = $m.ObfSigs; Color = 'Red' }, @{ Head = 'Supporting indicators'; Items = $m.Supporting; Color = 'DarkGray' }) }
 
     if ($disal.Count -gt 0) { Write-Sub "Disallowed mods" $disal.Count 'Red' }
     foreach ($m in $disal) { Write-Card 'DISALLOWED' 'DarkRed' $m.File @(@{ Head = 'Matched rule'; Items = @($m.Disallowed); Color = 'Red' }, @{ Head = 'Notes'; Items = $m.Notes; Color = 'Cyan' }) }
@@ -2620,7 +3040,9 @@ foreach ($g in $groups) {
     if ($tampered.Count -gt 0) { Write-Sub "Tampered mods" $tampered.Count 'DarkCyan' }
     foreach ($m in $tampered) {
         $t = $m.File; if ($m.ModName) { $t += "   [$($m.ModName)]" }
-        Write-Card 'TAMPERED' 'DarkCyan' $t @(@{ Head = 'Detected issues'; Items = $m.Tamper; Color = 'Cyan' })
+        $tg = @(@{ Head = 'Detected issues'; Items = $m.Tamper; Color = 'Cyan' })
+        if (-not (@($obf | ForEach-Object { $_.File }) -contains $m.File)) { $tg += @{ Head = 'Supporting indicators'; Items = $m.Supporting; Color = 'DarkGray' } }
+        Write-Card 'TAMPERED' 'DarkCyan' $t $tg
     }
 
     if ($bypass.Count -gt 0) { Write-Sub "Bypass / injection" $bypass.Count 'Magenta' }
