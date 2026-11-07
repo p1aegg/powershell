@@ -2749,10 +2749,11 @@ function Invoke-ModScan([string]$ModsFolder, $Inst) {
                 $modName = $gs.Name; $slug = $gs.Slug; $url = $gs.Url
                 if ($gs.Exact) {
                     $expected = $gs.Size
-                    if ([math]::Abs($f.Length - $gs.Size) -le 512) { $vtype = 'Name'; $dl = $gs.Downloads }
-                    else {
-                        $d = [math]::Round(($f.Length - $gs.Size) / 1KB, 2)
-                        $sign = if ($d -gt 0) { "+" } else { "" }
+                    $d = [math]::Round(($f.Length - $gs.Size) / 1KB, 2)
+                    $sign = if ($d -gt 0) { "+" } else { "" }
+                    if ([math]::Abs($f.Length - $gs.Size) -le 512) {
+                        $hint = "Name/size match Modrinth release of '$($gs.Name)' but the SHA-1 does not match - NOT verified (possible spoof, rebuilt jar, or non-Modrinth copy)"
+                    } else {
                         $tamper.Add("File differs from the Modrinth release of '$($gs.Name)' ($sign$d KB, expected $([math]::Round($gs.Size/1KB,2)) KB) - hash does not match")
                     }
                 } else { $hint = "Name resembles Modrinth project '$($gs.Name)' but no matching release/hash was found" }
