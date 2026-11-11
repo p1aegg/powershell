@@ -362,13 +362,18 @@ function Find-AllJdkToolCandidates([string]$toolExeName, $proc, [bool]$firstOnly
         "$env:LOCALAPPDATA\Programs\Java"
     )
     foreach ($r in $roots) {
-        if ($firstOnly) {
-            $hit = Get-ChildItem -Path $r -Filter $toolExeName -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { $candidates.Add($hit.FullName); return $candidates }
-            continue
+        if (-not (Test-Path -LiteralPath $r -ErrorAction SilentlyContinue)) { continue }
+        $homes = New-Object System.Collections.Generic.List[string]
+        foreach ($d1 in (Get-ChildItem -LiteralPath $r -Directory -ErrorAction SilentlyContinue)) {
+            $homes.Add($d1.FullName)
+            foreach ($d2 in (Get-ChildItem -LiteralPath $d1.FullName -Directory -ErrorAction SilentlyContinue)) { $homes.Add($d2.FullName) }
         }
-        Get-ChildItem -Path $r -Filter $toolExeName -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-            if (-not $candidates.Contains($_.FullName)) { $candidates.Add($_.FullName) }
+        foreach ($h in $homes) {
+            $c = Join-Path $h "bin\$toolExeName"
+            if ((Test-Path -LiteralPath $c -PathType Leaf -ErrorAction SilentlyContinue) -and -not $candidates.Contains($c)) {
+                $candidates.Add($c)
+                if ($firstOnly) { return $candidates }
+            }
         }
     }
     return $candidates
@@ -415,15 +420,23 @@ function Test-JavaSupportsAttach([string]$javaPath) {
     }
 }
 
-function Find-AttachCapableJdk($proc) {
-    foreach ($javaCandidate in (Find-AllJdkToolCandidates "java.exe" $proc)) {
-        if (-not (Test-JavaSupportsAttach $javaCandidate)) { continue }
-        $bin = Split-Path $javaCandidate -Parent
-        $javacCandidate = Join-Path $bin "javac.exe"
-        $jarCandidate = Join-Path $bin "jar.exe"
-        if ((Test-Path $javacCandidate -ErrorAction SilentlyContinue) -and (Test-Path $jarCandidate -ErrorAction SilentlyContinue)) {
-            return @{ Java = $javaCandidate; Javac = $javacCandidate; Jar = $jarCandidate }
-        }
+function Get-JdkBinTools([string]$bin) {
+    if (-not $bin) { return $null }
+    $t = @{ Java = (Join-Path $bin "java.exe"); Javac = (Join-Path $bin "javac.exe"); Jar = (Join-Path $bin "jar.exe") }
+    foreach ($p in $t.Values) { if (-not (Test-Path -LiteralPath $p -PathType Leaf -ErrorAction SilentlyContinue)) { return $null } }
+    return $t
+}
+
+function Find-AttachCapableJdk($proc, [string]$preferBin) {
+    $bins = New-Object System.Collections.Generic.List[string]
+    if ($preferBin) { $bins.Add($preferBin) }
+    foreach ($javaCandidate in (Find-AllJdkToolCandidates "javac.exe" $proc)) {
+        $b = Split-Path $javaCandidate -Parent
+        if (-not $bins.Contains($b)) { $bins.Add($b) }
+    }
+    foreach ($b in $bins) {
+        $t = Get-JdkBinTools $b
+        if ($t -and (Test-JavaSupportsAttach $t.Java)) { return $t }
     }
     return $null
 }
@@ -442,27 +455,23 @@ $jarExe = $null
 $javaExe = $null
 if ($jcmd) {
     Write-Ok "jcmd    $jcmd"
-    $jimage = Find-Jimage $firstJavaProc
+    $jcmdBin = Split-Path $jcmd -Parent
+    $jimageNext = Join-Path $jcmdBin "jimage.exe"
+    $jimage = if (Test-Path -LiteralPath $jimageNext -PathType Leaf -ErrorAction SilentlyContinue) { $jimageNext } else { Find-Jimage $firstJavaProc }
     if ($jimage) {
         Write-Ok "jimage  $jimage"
     } else {
         Write-Warn "jimage.exe not found next to jcmd - JDK platform classes can't be indexed and will be reported as unverified."
     }
-    $javacExe = Find-JdkTool "javac.exe" $firstJavaProc
-    $jarExe   = Find-JdkTool "jar.exe" $firstJavaProc
-    $javaExe  = Find-JdkTool "java.exe" $firstJavaProc
 
-    if ($javaExe -and -not (Test-JavaSupportsAttach $javaExe)) {
-        Write-Dim "$javaExe can't resolve the jdk.attach module - probing other JDKs for one that can..." 4
-        $attachCapable = Find-AttachCapableJdk $firstJavaProc
-        if ($attachCapable) {
-            $javaExe = $attachCapable.Java
-            $javacExe = $attachCapable.Javac
-            $jarExe = $attachCapable.Jar
-            Write-Ok "attach-capable JDK  $javaExe"
-        } else {
-            Write-Warn "No attach-capable JDK found on this machine - provenance mode will fail to attach; the name-based fallback will still run."
-        }
+    $attachCapable = Find-AttachCapableJdk $firstJavaProc $jcmdBin
+    if ($attachCapable) {
+        $javaExe = $attachCapable.Java
+        $javacExe = $attachCapable.Javac
+        $jarExe = $attachCapable.Jar
+        Write-Ok "java    $javaExe"
+    } else {
+        Write-Warn "No attach-capable JDK (java + javac + jar with jdk.attach) found on this machine - provenance mode is unavailable; the name-based check will still run."
     }
 } else {
     Write-Fail "Could not obtain a JDK. Classloader dumps require jcmd - aborting."
@@ -1203,7 +1212,8 @@ function Get-McVersionCandidates([string]$cmdText, $cpEntries) {
 }
 
 $StaffTrustedHashes = @(
-    'f292d43848e7aa09963dff0946cd1e0edbd778a6a0aa759bf4b387749a631712'
+    'f292d43848e7aa09963dff0946cd1e0edbd778a6a0aa759bf4b387749a631712',
+    '0b4ed33ee20440042c772ffb37f1a815c2cd7d0ec3e8287dd07209b170f48f42'
 )
 
 function Import-StaffHashFile {
@@ -2151,10 +2161,27 @@ if ($tc.BADLOCAL -gt 0) { Write-Note "$($tc.BADLOCAL) jar(s) are listed only in 
 Write-Info "$($script:VerifiedClasses.Count) classes belong to hash-verified jars"
 Lap "trust sources"
 
+function Test-TrustedAgent([string]$ap) {
+    if (-not (Test-Path -LiteralPath $ap -PathType Leaf -ErrorAction SilentlyContinue)) { return $false }
+    $a = Get-JarAnalysis $ap
+    return [bool]($a -and $a.Exists -and $a.Tier -eq 'OFFICIAL' -and $a.Reason -like 'staff allow-list*')
+}
+
 foreach ($proc in $targetProcs) {
     $ps = $ProcSetup[$proc.Id]
+    $trustedAgents = New-Object System.Collections.Generic.List[string]
+    $otherAgents = New-Object System.Collections.Generic.List[string]
+    foreach ($ap in $ps.AgentPaths) { if (Test-TrustedAgent $ap) { $trustedAgents.Add($ap) } else { $otherAgents.Add($ap) } }
+    $agentFlagCount = [regex]::Matches([string]$ps.Cmd, '-javaagent:', 'IgnoreCase').Count
+    if ($otherAgents.Count -eq 0 -and $trustedAgents.Count -gt 0 -and $agentFlagCount -eq $trustedAgents.Count) {
+        $ps.Flags = @($ps.Flags | Where-Object { $_ -notlike 'java agent loaded at startup*' })
+    }
+    $ps.TrustedAgents = $trustedAgents
+    $ps.AgentPaths = $otherAgents
+
     foreach ($fl in $ps.Flags) { Write-Note "PID $($proc.Id) JVM flag: $fl" 4 }
-    foreach ($ap in $ps.AgentPaths) {
+    foreach ($ap in $trustedAgents) { Write-Dim "PID $($proc.Id) launcher agent (hash on the staff allow-list)  $ap" 4 }
+    foreach ($ap in $otherAgents) {
         $a = if (Test-Path -LiteralPath $ap -ErrorAction SilentlyContinue) { Get-JarAnalysis $ap } else { $null }
         $t = if ($a -and $a.Exists) { $a.Tier } else { 'MISSING' }
         Write-Note "PID $($proc.Id) -javaagent  [$t]  $ap" 4
@@ -2434,12 +2461,17 @@ if ($ProvenanceMode) {
         foreach ($a in $weak) { $rep.Add("$($a.Hashes.SHA256)  $($a.Path)") }
         $rep.Add("")
         $rep.Add("== JVM FLAGS / AGENTS ==")
-        if ($ps.Flags.Count -eq 0 -and $ps.AgentPaths.Count -eq 0) { $rep.Add("none") }
+        if (@($ps.Flags).Count -eq 0 -and @($ps.AgentPaths).Count -eq 0) { $rep.Add("none") }
         foreach ($fl in $ps.Flags) { $rep.Add("flag: $fl") }
         foreach ($ap in $ps.AgentPaths) {
             $a = if (Test-Path -LiteralPath $ap -ErrorAction SilentlyContinue) { Get-JarAnalysis $ap } else { $null }
             $t = if ($a -and $a.Exists) { "$($a.Tier) ($($a.Reason))  sha256=$($a.Hashes.SHA256)" } else { "MISSING ON DISK" }
             $rep.Add("javaagent: $ap  =>  $t")
+        }
+        if (@($ps.TrustedAgents).Count -gt 0) {
+            $rep.Add("")
+            $rep.Add("== TRUSTED LAUNCHER AGENTS (hash on the staff allow-list - not flagged) ==")
+            foreach ($ap in $ps.TrustedAgents) { $rep.Add("$((Get-JarAnalysis $ap).Hashes.SHA256)  $ap") }
         }
         $rep.Add("")
         $rep.Add("== CROSS-CHECK: jcmd names the agent did not report (informational) ==")
