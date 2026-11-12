@@ -13,7 +13,7 @@ $gTri=[string][char]0x25B8
 
 $script:W = 76
 $script:SectionNo = 0
-$script:ToolVersion = '1.3.0'
+$script:ToolVersion = '1.3.2'
 
 function Write-Line([string]$glyph, [string]$gc, [string]$msg, [string]$mc = 'Gray', [int]$indent = 2) {
     Write-Host ((' ' * $indent) + $glyph + ' ') -NoNewline -ForegroundColor $gc
@@ -727,7 +727,7 @@ public static class P1Fast
                 if (prx == "true") { tier = "Generated"; reason = "dynamic proxy, confirmed by the JVM (its handler classes are checked on their own)"; return; }
                 if (prx == "false") { tier = "Suspicious"; reason = "named like a dynamic proxy but the JVM says it is not a proxy class - spoofed name"; return; }
                 if (!JdkProxyRx.IsMatch(b) || jdk.Contains(loader) || verified.Contains(loader)) { tier = "Generated"; reason = "dynamic proxy (its handler classes are checked on their own)"; return; }
-                tier = "Unverified"; reason = "named like a JDK dynamic proxy (jdk.proxyN) but defined by unverified loader " + loader + " - staff review"; return;
+                tier = "Unverified"; reason = "named like a JDK dynamic proxy (jdk.proxyN) but defined by unverified loader " + loader + " - review"; return;
             }
             if (ac.IsMatch(b) && DelegRx.IsMatch(loader)) { tier = "Generated"; reason = "reflection accessor"; return; }
             if (stripped && (verified.Contains(b) || jdk.Contains(b)))
@@ -736,18 +736,18 @@ public static class P1Fast
                 bool ldOk = lbn.TryGetValue(b, out bl) && bl.Contains(loader);
                 if (hidOk && ldOk) { tier = "Generated"; reason = "generated from verified class " + b; return; }
                 tier = "Unverified";
-                reason = "named like a class generated from " + b + " but " + (!hidOk ? "it is not a hidden/VM-anonymous class" : "it was defined by a different loader than " + b) + " - staff review";
+                reason = "named like a class generated from " + b + " but " + (!hidOk ? "it is not a hidden/VM-anonymous class" : "it was defined by a different loader than " + b) + " - review";
                 return;
             }
             string anonOuter = AnonAnyRx.Replace(b, "");
             if (anonOuter != b && (verified.Contains(anonOuter) || IsGeneratedOrIntermediary(anonOuter, verified, jdk, mxOk)))
             {
                 if (LoaderHas(lbn, anonOuter, loader)) { tier = "Generated"; reason = "Mixin-generated inner class of " + anonOuter; return; }
-                tier = "Unverified"; reason = "named like a Mixin-generated inner class of " + anonOuter + " but it was defined by a different loader - staff review"; return;
+                tier = "Unverified"; reason = "named like a Mixin-generated inner class of " + anonOuter + " but it was defined by a different loader - review"; return;
             }
             if (isMxGen) { tier = "Generated"; reason = MxDone; return; }
-            if (MxPrefixRx.IsMatch(b) || IsMixinArgs(b, verified)) { tier = "Unverified"; reason = "named like a Mixin/MixinExtras generated class but defined by a loader that did not load that library (" + loader + ") - staff review"; return; }
-            tier = "Unverified"; reason = "in-memory class with no backing file - cannot be verified, staff review"; return;
+            if (MxPrefixRx.IsMatch(b) || IsMixinArgs(b, verified)) { tier = "Unverified"; reason = "named like a Mixin/MixinExtras generated class but defined by a loader that did not load that library (" + loader + ") - review"; return; }
+            tier = "Unverified"; reason = "in-memory class with no backing file - cannot be verified, review"; return;
         }
 
         string path = c.Path;
@@ -765,7 +765,7 @@ public static class P1Fast
             return;
         }
         if (stripped && !hidOk && !cls.Contains(name))
-        { tier = "Unverified"; reason = "named like a lambda/hidden class of " + b + " but it is not a hidden class - staff review: " + path; return; }
+        { tier = "Unverified"; reason = "named like a lambda/hidden class of " + b + " but it is not a hidden class - review: " + path; return; }
         string note = c.Reparse ? " [file is a symlink/reparse point]" : "";
 
         if (c.ATier == "BADLOCAL") { tier = "Suspicious"; reason = c.AReason + ": " + path + note; return; }
@@ -794,7 +794,7 @@ public static class P1Fast
             tier = "Unverified"; reason = "class sits in a launcher cache jar but its exact name is not in the verified mappings or any verified jar: " + path; return;
         }
 
-        string why = !string.IsNullOrEmpty(c.AError) ? "jar hash not in any database; " + c.AError : "jar hash not found in Mojang / Fabric / Quilt / Modrinth / Maven Central / staff list";
+        string why = !string.IsNullOrEmpty(c.AError) ? "jar hash not in any database; " + c.AError : "jar hash not found in Mojang / Fabric / Quilt / Modrinth / Maven Central / allow-list";
         tier = "Unverified"; reason = why + ": " + path + note;
     }
 
@@ -1211,25 +1211,30 @@ function Get-McVersionCandidates([string]$cmdText, $cpEntries) {
     return @($c | Select-Object -Unique)
 }
 
-$StaffTrustedHashes = @(
+$TrustedHashes = @(
     'f292d43848e7aa09963dff0946cd1e0edbd778a6a0aa759bf4b387749a631712',
+    '6791b1ca9fc98909c21d861a8a322c584c98aeee97b393af0c92d1b805b54ff0',
     '0b4ed33ee20440042c772ffb37f1a815c2cd7d0ec3e8287dd07209b170f48f42'
 )
 
-function Import-StaffHashFile {
+$TrustedPaths = @(
+    'C:\Users\p1aed\OneDrive\Desktop\mc\clients\Internal\build\libs\Internal.jar'
+)
+
+function Import-TrustedHashFile {
     $dir = if ($PSScriptRoot) { $PSScriptRoot } else { $env:TEMP }
     $p = Join-Path $dir "trusted-hashes.txt"
     if (Test-Path -LiteralPath $p -ErrorAction SilentlyContinue) {
         Write-Warn "Ignoring a pre-existing trusted-hashes.txt - only the list built into this script is trusted"
         Remove-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
     }
-    if (@($StaffTrustedHashes).Count -eq 0) { return 0 }
+    if (@($TrustedHashes).Count -eq 0) { return 0 }
     $n = 0
     try {
-        [IO.File]::WriteAllLines($p, [string[]]@($StaffTrustedHashes), (New-Object System.Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllLines($p, [string[]]@($TrustedHashes), (New-Object System.Text.UTF8Encoding($false)))
         foreach ($line in [IO.File]::ReadAllLines($p)) {
             $t = ($line -replace '#.*$', '').Trim()
-            if ($t -match '^[0-9a-fA-F]{40,128}$') { Register-Hash $t 'OFFICIAL' 'staff allow-list (built into this script)'; $n++ }
+            if ($t -match '^[0-9a-fA-F]{40,128}$') { Register-Hash $t 'OFFICIAL' 'allow-list (built into this script)'; $n++ }
         }
     } catch {
         Write-Warn "Could not write/read trusted-hashes.txt: $($_.Exception.Message)"
@@ -1730,23 +1735,23 @@ function Get-ClassVerdict($rec, $remapFolders) {
             if ($rec.Proxy -eq 'true') { return (New-Verdict 'Generated' 'dynamic proxy, confirmed by the JVM (its handler classes are checked on their own)') }
             if ($rec.Proxy -eq 'false') { return (New-Verdict 'Suspicious' 'named like a dynamic proxy but the JVM says it is not a proxy class - spoofed name') }
             if ($base -notmatch 'jdk\.proxy\d+\.' -or $script:JdkClasses.Contains([string]$rec.Loader) -or $script:VerifiedClasses.Contains([string]$rec.Loader)) { return (New-Verdict 'Generated' 'dynamic proxy (its handler classes are checked on their own)') }
-            return (New-Verdict 'Unverified' "named like a JDK dynamic proxy (jdk.proxyN) but defined by unverified loader $($rec.Loader) - staff review")
+            return (New-Verdict 'Unverified' "named like a JDK dynamic proxy (jdk.proxyN) but defined by unverified loader $($rec.Loader) - review")
         }
         if ($base -match $AccessorPattern -and $rec.Loader -match '(jdk\.internal|sun)\.reflect\.DelegatingClassLoader') { return (New-Verdict 'Generated' 'reflection accessor') }
         if ($stripped -and ($script:VerifiedClasses.Contains($base) -or $script:JdkClasses.Contains($base))) {
             $ldOk = Test-LoaderHas $base $ldr
             if ($hidOk -and $ldOk) { return (New-Verdict 'Generated' "generated from verified class $base") }
             $whyNot = if (-not $hidOk) { 'it is not a hidden/VM-anonymous class' } else { "it was defined by a different loader than $base" }
-            return (New-Verdict 'Unverified' "named like a class generated from $base but $whyNot - staff review")
+            return (New-Verdict 'Unverified' "named like a class generated from $base but $whyNot - review")
         }
         $anonOuter = $base -replace '\$Anonymous\$[0-9a-fA-F]{32}$', ''
         if ($anonOuter -ne $base -and ($script:VerifiedClasses.Contains($anonOuter) -or (Test-IntermediaryOrGenerated $anonOuter))) {
             if (Test-LoaderHas $anonOuter $ldr) { return (New-Verdict 'Generated' "Mixin-generated inner class of $anonOuter") }
-            return (New-Verdict 'Unverified' "named like a Mixin-generated inner class of $anonOuter but it was defined by a different loader - staff review")
+            return (New-Verdict 'Unverified' "named like a Mixin-generated inner class of $anonOuter but it was defined by a different loader - review")
         }
         if ($isMxGen) { return (New-Verdict 'Generated' 'Mixin/MixinExtras runtime-generated class (library jar is verified)') }
-        if ($isMxName -or (Test-MixinArgs $base)) { return (New-Verdict 'Unverified' "named like a Mixin/MixinExtras generated class but defined by a loader that did not load that library ($ldr) - staff review") }
-        return (New-Verdict 'Unverified' 'in-memory class with no backing file - cannot be verified, staff review')
+        if ($isMxName -or (Test-MixinArgs $base)) { return (New-Verdict 'Unverified' "named like a Mixin/MixinExtras generated class but defined by a loader that did not load that library ($ldr) - review") }
+        return (New-Verdict 'Unverified' 'in-memory class with no backing file - cannot be verified, review')
     }
 
     $path = $loc.Path
@@ -1763,7 +1768,7 @@ function Get-ClassVerdict($rec, $remapFolders) {
         return (New-Verdict 'Suspicious' "$lateWhat ($($st.Stamp) UTC) - replaced or altered at runtime: $path" $path)
     }
     if ($stripped -and -not $hidOk -and -not $a.Classes.Contains($name)) {
-        return (New-Verdict 'Unverified' "named like a lambda/hidden class of $base but it is not a hidden class - staff review: $path" $path)
+        return (New-Verdict 'Unverified' "named like a lambda/hidden class of $base but it is not a hidden class - review: $path" $path)
     }
     $note = if ($st.Reparse) { ' [file is a symlink/reparse point]' } else { '' }
 
@@ -1786,7 +1791,7 @@ function Get-ClassVerdict($rec, $remapFolders) {
         return (New-Verdict 'Unverified' "launcher cache jar cannot be content-checked by the fallback engine - rerun in a new PowerShell window: $path" $path)
     }
 
-    $why = if ($a.Error) { "jar hash not in any database; $($a.Error)" } else { "jar hash not found in Mojang / Fabric / Quilt / Modrinth / Maven Central / staff list" }
+    $why = if ($a.Error) { "jar hash not in any database; $($a.Error)" } else { "jar hash not found in Mojang / Fabric / Quilt / Modrinth / Maven Central / allow-list" }
     return (New-Verdict 'Unverified' "${why}: $path$note" $path)
 }
 
@@ -2072,8 +2077,15 @@ Write-Ok "jcmd  $jcmd"
 
 Write-Section "Trust sources"
 $ProcSetup = @{}
-$staffCount = Import-StaffHashFile
-if ($staffCount -gt 0) { Write-Ok "staff allow-list  $staffCount built-in hash(es)" }
+$trustedCount = Import-TrustedHashFile
+if ($trustedCount -gt 0) { Write-Ok "allow-list  $trustedCount built-in hash(es)" }
+
+$trustedPathsValid = @($TrustedPaths | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf -ErrorAction SilentlyContinue) })
+if ($trustedPathsValid.Count -gt 0) {
+    Invoke-JarPrefetch $trustedPathsValid
+    foreach ($tp in $trustedPathsValid) { [void](Get-JarAnalysis $tp) }
+    Write-Ok "trusted paths  $($trustedPathsValid.Count) jar(s) pre-analyzed"
+}
 
 $jdkSeen = @{}
 foreach ($proc in $targetProcs) {
@@ -2164,7 +2176,7 @@ Lap "trust sources"
 function Test-TrustedAgent([string]$ap) {
     if (-not (Test-Path -LiteralPath $ap -PathType Leaf -ErrorAction SilentlyContinue)) { return $false }
     $a = Get-JarAnalysis $ap
-    return [bool]($a -and $a.Exists -and $a.Tier -eq 'OFFICIAL' -and $a.Reason -like 'staff allow-list*')
+    return [bool]($a -and $a.Exists -and $a.Tier -eq 'OFFICIAL' -and $a.Reason -like 'allow-list*')
 }
 
 foreach ($proc in $targetProcs) {
@@ -2180,7 +2192,7 @@ foreach ($proc in $targetProcs) {
     $ps.AgentPaths = $otherAgents
 
     foreach ($fl in $ps.Flags) { Write-Note "PID $($proc.Id) JVM flag: $fl" 4 }
-    foreach ($ap in $trustedAgents) { Write-Dim "PID $($proc.Id) launcher agent (hash on the staff allow-list)  $ap" 4 }
+    foreach ($ap in $trustedAgents) { Write-Dim "PID $($proc.Id) launcher agent (hash on the allow-list)  $ap" 4 }
     foreach ($ap in $otherAgents) {
         $a = if (Test-Path -LiteralPath $ap -ErrorAction SilentlyContinue) { Get-JarAnalysis $ap } else { $null }
         $t = if ($a -and $a.Exists) { $a.Tier } else { 'MISSING' }
@@ -2213,6 +2225,15 @@ foreach ($j in $jobs) {
             if ($j.Short -eq "Classloaders-Full" -and $output) {
                 $classes = Extract-ClassNames $outputText
                 $jcmdNamesByPid[$pidNum] = $classes
+                $dumpFilePaths = [regex]::Matches($outputText, '(?:file:/+)([A-Za-z]:[^\]\s\r\n!]+\.jar|/[^\]\s\r\n!]+\.jar)', 'IgnoreCase') |
+                    ForEach-Object { try { ([Uri]("file:///" + $_.Groups[1].Value.TrimStart('/'))).LocalPath } catch { $null } } |
+                    Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf -ErrorAction SilentlyContinue) }
+                $newPaths = @($dumpFilePaths | Where-Object { -not $script:AnalysisCache.ContainsKey((Get-PathKey $_)) })
+                if ($newPaths.Count -gt 0) {
+                    Invoke-JarPrefetch $newPaths
+                    Resolve-JarTiers
+                    Update-VerifiedClasses
+                }
                 $unknownForProc = if ($script:FastOK) {
                     [P1Fast]::FilterUnknown([string[]]@($classes), $script:VerifiedClasses, $script:JdkClasses, $ProxyPattern, $AccessorPattern, $JdkSpunPattern, [bool]$script:VerifiedClasses.Contains('com.llamalad7.mixinextras.MixinExtrasBootstrap')) | Sort-Object
                 } else { $classes | Where-Object { -not (Test-KnownByName $_) } | Sort-Object }
@@ -2470,7 +2491,7 @@ if ($ProvenanceMode) {
         }
         if (@($ps.TrustedAgents).Count -gt 0) {
             $rep.Add("")
-            $rep.Add("== TRUSTED LAUNCHER AGENTS (hash on the staff allow-list - not flagged) ==")
+            $rep.Add("== TRUSTED LAUNCHER AGENTS (hash on the allow-list - not flagged) ==")
             foreach ($ap in $ps.TrustedAgents) { $rep.Add("$((Get-JarAnalysis $ap).Hashes.SHA256)  $ap") }
         }
         $rep.Add("")
@@ -2540,6 +2561,6 @@ if ($ProvenanceMode) {
 }
 $fileCount = if ($ProvenanceMode) { "ALL FIVE" } else { "ALL THREE" }
 Write-Host ""
-Write-Box @("Send $fileCount .txt files to the staff member running your SS.") 'Green' @('White')
+Write-Box @("Send $fileCount .txt files to the member running your SS.") 'Green' @('White')
 Write-Host ""
 exit
